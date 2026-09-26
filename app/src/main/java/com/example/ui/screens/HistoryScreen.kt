@@ -21,15 +21,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.CloudQueue
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +60,8 @@ import com.example.data.local.PromptHistoryEntity
 import com.example.ui.PromptFlowViewModel
 import com.example.ui.components.AppBadge
 import com.example.ui.components.SectionHeader
+import com.example.ui.theme.EmeraldGreen
+import com.example.ui.theme.NeonCyan
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,6 +73,7 @@ fun HistoryScreen(
     modifier: Modifier = Modifier
 ) {
     val historyList by viewModel.historyList.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var showClearConfirm by remember { mutableStateOf(false) }
 
@@ -86,15 +94,61 @@ fun HistoryScreen(
                 modifier = Modifier.weight(1f)
             )
 
-            if (historyList.isNotEmpty()) {
-                IconButton(
-                    onClick = { showClearConfirm = true },
-                    modifier = Modifier.testTag("clear_all_history_button")
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (historyList.isNotEmpty()) {
+                    IconButton(
+                        onClick = { viewModel.syncAllHistoryToCloud() },
+                        enabled = !uiState.isSyncingCloud,
+                        modifier = Modifier.testTag("sync_all_cloud_button")
+                    ) {
+                        if (uiState.isSyncingCloud) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.CloudUpload,
+                                contentDescription = "Sync All to Firebase",
+                                tint = NeonCyan
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = { showClearConfirm = true },
+                        modifier = Modifier.testTag("clear_all_history_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = "Clear All History",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+
+        if (uiState.cloudMessage != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.DeleteSweep,
-                        contentDescription = "Clear All History",
-                        tint = MaterialTheme.colorScheme.error
+                        imageVector = Icons.Default.CloudQueue,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = uiState.cloudMessage ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -156,6 +210,9 @@ fun HistoryScreen(
                             clipboard.setPrimaryClip(clip)
                             Toast.makeText(context, "Prompt copied to clipboard!", Toast.LENGTH_SHORT).show()
                         },
+                        onSyncCloud = {
+                            viewModel.syncPromptToCloud(item)
+                        },
                         onDelete = {
                             viewModel.deleteHistoryItem(item.id)
                             Toast.makeText(context, "Item deleted", Toast.LENGTH_SHORT).show()
@@ -196,6 +253,7 @@ fun HistoryItemCard(
     item: PromptHistoryEntity,
     onOpen: () -> Unit,
     onCopy: () -> Unit,
+    onSyncCloud: () -> Unit,
     onDelete: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault()) }
@@ -224,7 +282,35 @@ fun HistoryItemCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (item.isSyncedWithCloud) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = EmeraldGreen.copy(alpha = 0.15f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.CloudDone,
+                                    contentDescription = null,
+                                    tint = EmeraldGreen,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = "Cloud",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = EmeraldGreen,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                     AppBadge(text = item.aspectRatio)
                     AppBadge(text = item.duration)
                 }
@@ -258,6 +344,18 @@ fun HistoryItemCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (!item.isSyncedWithCloud) {
+                    OutlinedButton(
+                        onClick = onSyncCloud,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.padding(end = 6.dp)
+                    ) {
+                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Cloud Sync", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
                 OutlinedButton(
                     onClick = onOpen,
                     shape = RoundedCornerShape(8.dp),

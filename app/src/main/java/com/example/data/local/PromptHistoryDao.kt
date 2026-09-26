@@ -21,6 +21,9 @@ interface PromptHistoryDao {
     @Update
     suspend fun update(entity: PromptHistoryEntity)
 
+    @Query("UPDATE prompt_history SET isSyncedWithCloud = :isSynced, cloudDocumentId = :cloudId WHERE id = :id")
+    suspend fun updateCloudSyncStatus(id: Long, isSynced: Boolean, cloudId: String?)
+
     @Query("DELETE FROM prompt_history WHERE id = :id")
     suspend fun deleteById(id: Long)
 

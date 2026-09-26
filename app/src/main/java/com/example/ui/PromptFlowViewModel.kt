@@ -3,6 +3,8 @@ package com.example.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.firebase.FirebaseManager
+import com.example.data.firebase.FirestorePromptModel
 import com.example.data.local.AppDatabase
 import com.example.data.local.PromptHistoryEntity
 import com.example.data.preferences.UserPreferencesManager
@@ -25,6 +27,8 @@ data class PromptUiState(
     val infoMessage: String? = null,
     val isTestingApi: Boolean = false,
     val apiTestResult: String? = null,
+    val isSyncingCloud: Boolean = false,
+    val cloudMessage: String? = null,
     val lastGeneratedConfig: PromptConfig? = null
 )
 
@@ -34,6 +38,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
     private val database = AppDatabase.getDatabase(application)
     private val historyRepository = PromptHistoryRepository(database.promptHistoryDao())
     private val promptService = PromptGeneratorService()
+    val firebaseManager = FirebaseManager(application)
 
     private val _config = MutableStateFlow(
         PromptConfig(
@@ -55,6 +60,8 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         )
 
     val currentTheme: StateFlow<String> = preferencesManager.themeFlow
+
+    fun isFirebaseAvailable(): Boolean = firebaseManager.isFirebaseInitialized()
 
     fun updateScript(script: String) {
         _config.value = _config.value.copy(script = script)
@@ -194,7 +201,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
                     infoMessage = if (apiKey.isNotBlank()) "Master prompt generated via DeepSeek V4.1 AI!" else "Master prompt synthesized with strict 22-point engine."
                 )
 
-                // Save to history
+                // Save to local history
                 saveToHistory(current, prompt)
             }.onFailure { error ->
                 _uiState.value = _uiState.value.copy(
@@ -264,7 +271,125 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
             camera = config.camera,
             hasReferenceImage = config.referenceImageUri != null
         )
-        historyRepository.insert(entity)
+        val insertedId = historyRepository.insert(entity)
+
+        // Try syncing to Firebase if initialized
+        if (firebaseManager.isFirebaseInitialized()) {
+            val firestoreModel = FirestorePromptModel(
+                title = title,
+                scriptExcerpt = excerpt,
+                fullScript = config.script,
+                generatedPrompt = prompt,
+                aspectRatio = config.aspectRatio,
+                resolution = config.resolution,
+                duration = config.duration,
+                videoStyle = config.videoStyle,
+                location = config.location,
+                presenter = config.presenter,
+                camera = config.camera,
+                hasReferenceImage = config.referenceImageUri != null
+            )
+            val syncResult = firebaseManager.savePromptToCloud(firestoreModel)
+            syncResult.onSuccess { docId ->
+                historyRepository.updateCloudSyncStatus(insertedId, true, docId)
+            }
+        }
+    }
+
+    fun syncPromptToCloud(item: PromptHistoryEntity) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSyncingCloud = true, cloudMessage = null)
+            val model = FirestorePromptModel(
+                id = item.cloudDocumentId ?: "",
+                title = item.title,
+                scriptExcerpt = item.scriptExcerpt,
+                fullScript = item.fullScript,
+                generatedPrompt = item.generatedPrompt,
+                aspectRatio = item.aspectRatio,
+                resolution = item.resolution,
+                duration = item.duration,
+                videoStyle = item.videoStyle,
+                location = item.location,
+                presenter = item.presenter,
+                camera = item.camera,
+                hasReferenceImage = item.hasReferenceImage,
+                timestamp = item.timestamp
+            )
+
+            val result = firebaseManager.savePromptToCloud(model)
+            result.onSuccess { docId ->
+                historyRepository.updateCloudSyncStatus(item.id, true, docId)
+                _uiState.value = _uiState.value.copy(
+                    isSyncingCloud = false,
+                    cloudMessage = "Prompt synced to Firebase Cloud!"
+                )
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    isSyncingCloud = false,
+                    cloudMessage = "Sync failed: ${error.localizedMessage}"
+                )
+            }
+        }
+    }
+
+    fun syncAllHistoryToCloud() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSyncingCloud = true, cloudMessage = null)
+            val items = historyList.value
+            if (items.isEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    isSyncingCloud = false,
+                    cloudMessage = "No prompts to sync."
+                )
+                return@launch
+            }
+
+            var successCount = 0
+            for (item in items) {
+                val model = FirestorePromptModel(
+                    id = item.cloudDocumentId ?: "",
+                    title = item.title,
+                    scriptExcerpt = item.scriptExcerpt,
+                    fullScript = item.fullScript,
+                    generatedPrompt = item.generatedPrompt,
+                    aspectRatio = item.aspectRatio,
+                    resolution = item.resolution,
+                    duration = item.duration,
+                    videoStyle = item.videoStyle,
+                    location = item.location,
+                    presenter = item.presenter,
+                    camera = item.camera,
+                    hasReferenceImage = item.hasReferenceImage,
+                    timestamp = item.timestamp
+                )
+                val result = firebaseManager.savePromptToCloud(model)
+                if (result.isSuccess) {
+                    val docId = result.getOrNull()
+                    historyRepository.updateCloudSyncStatus(item.id, true, docId)
+                    successCount++
+                }
+            }
+
+            _uiState.value = _uiState.value.copy(
+                isSyncingCloud = false,
+                cloudMessage = if (successCount > 0) "Synced $successCount prompts to Firebase Database!" else "Sync completed."
+            )
+        }
+    }
+
+    fun testFirebaseDatabase() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSyncingCloud = true, cloudMessage = null)
+            val result = firebaseManager.testConnection()
+            result.onSuccess { msg ->
+                _uiState.value = _uiState.value.copy(isSyncingCloud = false, cloudMessage = msg)
+            }.onFailure { err ->
+                _uiState.value = _uiState.value.copy(
+                    isSyncingCloud = false,
+                    cloudMessage = "Firebase status: ${err.localizedMessage}"
+                )
+            }
+        }
     }
 
     fun loadFromHistory(history: PromptHistoryEntity) {
@@ -288,6 +413,10 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
 
     fun deleteHistoryItem(id: Long) {
         viewModelScope.launch {
+            val item = historyRepository.getById(id)
+            if (item?.cloudDocumentId != null) {
+                firebaseManager.deletePromptFromCloud(item.cloudDocumentId)
+            }
             historyRepository.deleteById(id)
         }
     }
@@ -317,6 +446,6 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun clearMessages() {
-        _uiState.value = _uiState.value.copy(errorMessage = null, infoMessage = null)
+        _uiState.value = _uiState.value.copy(errorMessage = null, infoMessage = null, cloudMessage = null)
     }
 }

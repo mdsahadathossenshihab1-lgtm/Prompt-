@@ -19,5 +19,7 @@ data class PromptHistoryEntity(
     val presenter: String,
     val camera: String,
     val hasReferenceImage: Boolean,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val cloudDocumentId: String? = null,
+    val isSyncedWithCloud: Boolean = false
 )

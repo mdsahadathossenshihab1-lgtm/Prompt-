@@ -13,6 +13,9 @@ class PromptHistoryRepository(private val dao: PromptHistoryDao) {
 
     suspend fun update(entity: PromptHistoryEntity) = dao.update(entity)
 
+    suspend fun updateCloudSyncStatus(id: Long, isSynced: Boolean, cloudId: String?) =
+        dao.updateCloudSyncStatus(id, isSynced, cloudId)
+
     suspend fun deleteById(id: Long) = dao.deleteById(id)
 
     suspend fun clearAll() = dao.clearAll()
