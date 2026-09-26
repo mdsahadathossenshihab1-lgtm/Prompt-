@@ -198,10 +198,10 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
                     editedPromptText = prompt,
                     isEditMode = false,
                     lastGeneratedConfig = current,
-                    infoMessage = if (apiKey.isNotBlank()) "Master prompt generated via DeepSeek V4.1 AI!" else "Master prompt synthesized with strict 22-point engine."
+                    infoMessage = "Master prompt generated successfully!"
                 )
 
-                // Save to local history
+                // Save to local history + Firebase cloud sync
                 saveToHistory(current, prompt)
             }.onFailure { error ->
                 _uiState.value = _uiState.value.copy(
@@ -273,7 +273,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         )
         val insertedId = historyRepository.insert(entity)
 
-        // Try syncing to Firebase if initialized
+        // Try syncing to Firebase Firestore if initialized
         if (firebaseManager.isFirebaseInitialized()) {
             val firestoreModel = FirestorePromptModel(
                 title = title,
@@ -326,7 +326,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
             }.onFailure { error ->
                 _uiState.value = _uiState.value.copy(
                     isSyncingCloud = false,
-                    cloudMessage = "Sync failed: ${error.localizedMessage}"
+                    cloudMessage = "Firebase sync: ${error.localizedMessage}"
                 )
             }
         }
@@ -390,6 +390,13 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
                 )
             }
         }
+    }
+
+    fun saveFirebaseConfig(projectId: String, apiKey: String, appId: String) {
+        preferencesManager.setFirebaseProjectId(projectId)
+        preferencesManager.setFirebaseApiKey(apiKey)
+        preferencesManager.setFirebaseAppId(appId)
+        testFirebaseDatabase()
     }
 
     fun loadFromHistory(history: PromptHistoryEntity) {

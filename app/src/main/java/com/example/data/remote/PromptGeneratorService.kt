@@ -1,6 +1,7 @@
 package com.example.data.remote
 
 import android.util.Log
+import com.example.data.preferences.UserPreferencesManager
 import com.example.model.PromptConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,8 +18,9 @@ class PromptGeneratorService {
 
     companion object {
         private const val TAG = "PromptGeneratorService"
-        const val API_URL = "https://api.xkiro.com/v1/chat/completions"
-        const val MODEL_NAME = "deepseek/deepseek-v4.1-flash:free"
+        const val API_URL = UserPreferencesManager.DEFAULT_API_URL
+        const val MODEL_NAME = UserPreferencesManager.DEFAULT_MODEL
+        const val FALLBACK_MODEL = "qwen/qwen3.7-max:free"
 
         const val SYSTEM_PROMPT = """You are an expert AI Video Prompt Engineer.
 
@@ -236,18 +238,33 @@ Do not discuss how the prompt was created."""
             return@withContext Result.failure(IllegalArgumentException("Please enter your dialogue script first."))
         }
 
+        val effectiveApiKey = apiKey.ifBlank { UserPreferencesManager.DEFAULT_INBUILT_API_KEY }
         val userPrompt = buildUserPrompt(config)
 
-        // If no API key configured or network is completely unavailable, synthesize with deterministic rule engine
-        if (apiKey.isBlank()) {
-            Log.w(TAG, "No API key configured. Synthesizing high-fidelity local master prompt.")
-            val synthesized = generateHighFidelityLocalPrompt(config)
-            return@withContext Result.success(synthesized)
+        // Try primary model (DeepSeek v4.1 Flash)
+        val primaryResult = invokeApi(MODEL_NAME, userPrompt, effectiveApiKey)
+        if (primaryResult.isSuccess) {
+            return@withContext primaryResult
         }
 
+        val primaryError = primaryResult.exceptionOrNull()
+        Log.w(TAG, "Primary model ($MODEL_NAME) failed: ${primaryError?.message}. Attempting fallback model ($FALLBACK_MODEL)...")
+
+        // Try fallback model (Qwen 3.7 Max Free)
+        val fallbackResult = invokeApi(FALLBACK_MODEL, userPrompt, effectiveApiKey)
+        if (fallbackResult.isSuccess) {
+            return@withContext fallbackResult
+        }
+
+        Log.w(TAG, "Both cloud models failed. Synthesizing high-fidelity local master prompt.")
+        val synthesized = generateHighFidelityLocalPrompt(config)
+        Result.success(synthesized)
+    }
+
+    private fun invokeApi(model: String, prompt: String, apiKey: String): Result<String> {
         try {
             val jsonBody = JSONObject().apply {
-                put("model", MODEL_NAME)
+                put("model", model)
                 val messages = JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "system")
@@ -255,11 +272,10 @@ Do not discuss how the prompt was created."""
                     })
                     put(JSONObject().apply {
                         put("role", "user")
-                        put("content", userPrompt)
+                        put("content", prompt)
                     })
                 }
                 put("messages", messages)
-                put("temperature", 0.7)
             }
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
@@ -276,24 +292,18 @@ Do not discuss how the prompt was created."""
                 val responseBody = response.body?.string() ?: ""
 
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "API call failed with HTTP ${response.code}: $responseBody")
-                    val errorMsg = when (response.code) {
-                        401 -> "Invalid API key. Please check your XKIRO_API_KEY in Settings."
-                        429 -> "Request limit reached. Please wait a moment and try again."
-                        500, 502, 503, 504 -> "AI service is temporarily unavailable. Please try again later."
-                        else -> "API Error (${response.code}): ${response.message}"
-                    }
-                    return@withContext Result.failure(IOException(errorMsg))
+                    Log.e(TAG, "API call for $model failed with HTTP ${response.code}: $responseBody")
+                    return Result.failure(IOException("HTTP ${response.code}: $responseBody"))
                 }
 
                 if (responseBody.isBlank()) {
-                    return@withContext Result.failure(IOException("Empty response received from AI service."))
+                    return Result.failure(IOException("Empty response received from AI service."))
                 }
 
                 val jsonResponse = JSONObject(responseBody)
                 val choices = jsonResponse.optJSONArray("choices")
                 if (choices == null || choices.length() == 0) {
-                    return@withContext Result.failure(IOException("No completion returned by AI model."))
+                    return Result.failure(IOException("No completion returned by AI model."))
                 }
 
                 val choice = choices.getJSONObject(0)
@@ -301,24 +311,41 @@ Do not discuss how the prompt was created."""
                 val content = message?.optString("content")?.trim() ?: ""
 
                 if (content.isBlank()) {
-                    return@withContext Result.failure(IOException("Empty AI generated prompt."))
+                    return Result.failure(IOException("Empty AI generated prompt."))
                 }
 
-                return@withContext Result.success(content)
+                return Result.success(content)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error invoking XKIRO API: ${e.message}", e)
-            return@withContext Result.failure(e)
+            return Result.failure(e)
         }
     }
 
     suspend fun testConnection(apiKey: String): Result<String> = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) {
-            return@withContext Result.failure(IllegalArgumentException("API Key cannot be empty."))
-        }
+        val effectiveKey = apiKey.ifBlank { UserPreferencesManager.DEFAULT_INBUILT_API_KEY }
         try {
+            // First test primary model
+            val primaryTest = testSingleModel(MODEL_NAME, effectiveKey)
+            if (primaryTest.isSuccess) {
+                return@withContext Result.success("Connected to XKIRO AI! Active model: $MODEL_NAME")
+            }
+
+            // Test fallback model
+            val fallbackTest = testSingleModel(FALLBACK_MODEL, effectiveKey)
+            if (fallbackTest.isSuccess) {
+                return@withContext Result.success("Connected to XKIRO AI! Active free model: $FALLBACK_MODEL (DeepSeek v4.1 will activate automatically when wallet is topped up).")
+            }
+
+            Result.failure(IOException(fallbackTest.exceptionOrNull()?.message ?: "Failed to connect to XKIRO API."))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun testSingleModel(model: String, apiKey: String): Result<String> {
+        return try {
             val jsonBody = JSONObject().apply {
-                put("model", MODEL_NAME)
+                put("model", model)
                 val messages = JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "user")
@@ -340,10 +367,11 @@ Do not discuss how the prompt was created."""
                 .build()
 
             client.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
                 if (response.isSuccessful) {
-                    Result.success("Connection successful! Model $MODEL_NAME is active.")
+                    Result.success("Success")
                 } else {
-                    Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
+                    Result.failure(IOException("HTTP ${response.code}: $body"))
                 }
             }
         } catch (e: Exception) {

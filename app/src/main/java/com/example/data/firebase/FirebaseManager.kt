@@ -2,8 +2,10 @@ package com.example.data.firebase
 
 import android.content.Context
 import android.util.Log
+import com.example.data.preferences.UserPreferencesManager
 import com.google.android.gms.tasks.Task
 import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.Dispatchers
@@ -13,19 +15,30 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 class FirebaseManager(private val context: Context) {
 
+    private val prefs = UserPreferencesManager(context)
+
     companion object {
         private const val TAG = "FirebaseManager"
         const val COLLECTION_PROMPTS = "prompts"
+
+        // Inbuilt provisioned Firebase credentials from project
+        const val INBUILT_PROJECT_ID = "project-d28c75fa-a3af-48dc-ac6"
+        const val INBUILT_API_KEY = "AIzaSyCBMJSy_j8LbOsc3eOwVZ31zUzHBKwkZoY"
+        const val INBUILT_APP_ID = "1:875494692128:android:d28c75fa33eaf848kptq"
+        const val INBUILT_FIRESTORE_DB_ID = "ai-studio-promptflowai-33eaf848-a774-4d54-9ed1-e99f251be592"
+        const val INBUILT_STORAGE_BUCKET = "project-d28c75fa-a3af-48dc-ac6.firebasestorage.app"
     }
 
     private suspend fun <T> Task<T>.awaitTask(): T = suspendCancellableCoroutine { continuation ->
         addOnSuccessListener { result ->
             if (continuation.isActive) {
-                continuation.resume(result, null)
+                continuation.resume(result)
             }
         }
         addOnFailureListener { exception ->
@@ -40,21 +53,58 @@ class FirebaseManager(private val context: Context) {
         }
     }
 
+    init {
+        ensureFirebaseInitialized()
+    }
+
     fun isFirebaseInitialized(): Boolean {
-        return try {
-            FirebaseApp.getApps(context).isNotEmpty()
+        return ensureFirebaseInitialized()
+    }
+
+    private fun ensureFirebaseInitialized(): Boolean {
+        try {
+            if (FirebaseApp.getApps(context).isNotEmpty()) {
+                return true
+            }
+
+            // Check if user provided custom settings
+            val customProjectId = prefs.getFirebaseProjectId()
+            val customApiKey = prefs.getFirebaseApiKey()
+            val customAppId = prefs.getFirebaseAppId()
+
+            val projectId = if (customProjectId.isNotBlank()) customProjectId else INBUILT_PROJECT_ID
+            val apiKey = if (customApiKey.isNotBlank()) customApiKey else INBUILT_API_KEY
+            val appId = if (customAppId.isNotBlank()) customAppId else INBUILT_APP_ID
+
+            val options = FirebaseOptions.Builder()
+                .setProjectId(projectId)
+                .setApiKey(apiKey)
+                .setApplicationId(appId)
+                .setStorageBucket(INBUILT_STORAGE_BUCKET)
+                .build()
+
+            FirebaseApp.initializeApp(context, options)
+            Log.d(TAG, "Successfully initialized Firebase with project $projectId")
+            return true
         } catch (e: Exception) {
-            Log.w(TAG, "Firebase not initialized: ${e.message}")
-            false
+            Log.w(TAG, "Failed to initialize Firebase: ${e.message}")
+            return false
         }
     }
 
-    private fun getFirestore(): FirebaseFirestore? {
+    fun getFirestore(): FirebaseFirestore? {
         return try {
-            if (isFirebaseInitialized()) {
-                FirebaseFirestore.getInstance()
-            } else {
-                null
+            if (!ensureFirebaseInitialized()) {
+                return null
+            }
+
+            val app = FirebaseApp.getInstance()
+            try {
+                // Try specific database ID first
+                FirebaseFirestore.getInstance(app, INBUILT_FIRESTORE_DB_ID)
+            } catch (e: Exception) {
+                // Fallback to default firestore database
+                FirebaseFirestore.getInstance(app)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error acquiring Firestore instance: ${e.message}", e)
@@ -65,7 +115,7 @@ class FirebaseManager(private val context: Context) {
     suspend fun savePromptToCloud(model: FirestorePromptModel): Result<String> = withContext(Dispatchers.IO) {
         val firestore = getFirestore()
             ?: return@withContext Result.failure(
-                IllegalStateException("Firebase is not initialized. Please ensure google-services.json is added to the app module.")
+                IllegalStateException("Firebase is not initialized.")
             )
 
         try {
@@ -135,13 +185,12 @@ class FirebaseManager(private val context: Context) {
     suspend fun testConnection(): Result<String> = withContext(Dispatchers.IO) {
         val firestore = getFirestore()
             ?: return@withContext Result.failure(
-                IllegalStateException("Firebase is not configured yet. Add google-services.json to connect to Cloud Firestore.")
+                IllegalStateException("Firebase is initializing. Please check internet connection.")
             )
 
         try {
-            // Check collection metadata/accessibility
             val snapshot = firestore.collection(COLLECTION_PROMPTS).limit(1).get().awaitTask()
-            Result.success("Connected to Firebase Firestore! Collection '$COLLECTION_PROMPTS' accessible.")
+            Result.success("Connected to Firebase Firestore! Inbuilt Project ID: $INBUILT_PROJECT_ID")
         } catch (e: Exception) {
             Result.failure(e)
         }

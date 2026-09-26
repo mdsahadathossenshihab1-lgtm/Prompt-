@@ -1,7 +1,11 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,15 +28,20 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.DisplaySettings
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -47,20 +56,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.ui.PromptFlowViewModel
 import com.example.ui.components.AppBadge
-import com.example.ui.components.FilterChipGroup
 import com.example.ui.components.SectionHeader
 import com.example.ui.theme.EmeraldGreen
-import com.example.ui.theme.NeonCyan
 import com.example.ui.theme.SunsetAmber
 
 @Composable
@@ -76,6 +79,11 @@ fun SettingsScreen(
     var customKeyInput by remember { mutableStateOf("") }
     var showKeyEditor by remember { mutableStateOf(false) }
 
+    var showFirebaseConfigEditor by remember { mutableStateOf(false) }
+    var fbProjectId by remember { mutableStateOf(prefs.getFirebaseProjectId()) }
+    var fbApiKey by remember { mutableStateOf(prefs.getFirebaseApiKey()) }
+    var fbAppId by remember { mutableStateOf(prefs.getFirebaseAppId()) }
+
     var defaultRatio by remember { mutableStateOf(prefs.getDefaultAspectRatio()) }
     var defaultDuration by remember { mutableStateOf(prefs.getDefaultDuration()) }
     var defaultStyle by remember { mutableStateOf(prefs.getDefaultStyle()) }
@@ -89,11 +97,11 @@ fun SettingsScreen(
     ) {
         SectionHeader(
             title = "App Settings",
-            subtitle = "AI configuration, default parameters, and theme preferences",
+            subtitle = "AI configuration, Firebase database, and theme preferences",
             icon = Icons.Default.Settings
         )
 
-        // API Status Card
+        // Inbuilt AI Model & Provider Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -109,8 +117,8 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 SectionHeader(
-                    title = "AI Model & Provider",
-                    subtitle = "XKIRO Chat Completions Engine",
+                    title = "Inbuilt AI Video Engine",
+                    subtitle = "XKIRO Chat Completions • DeepSeek V4.1 Flash",
                     icon = Icons.Default.Speed
                 )
 
@@ -137,12 +145,12 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "API Provider",
+                        text = "API Endpoint",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "XKIRO (api.xkiro.com)",
+                        text = "https://api.xkiro.com/v1",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -155,24 +163,23 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "API Key Status",
+                        text = "Inbuilt API Status",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    val hasKey = prefs.hasApiKey()
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = if (hasKey) Icons.Default.CheckCircle else Icons.Default.Warning,
+                            imageVector = Icons.Default.CheckCircle,
                             contentDescription = null,
-                            tint = if (hasKey) EmeraldGreen else SunsetAmber,
+                            tint = EmeraldGreen,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = if (hasKey) prefs.getMaskedApiKey() else "Not configured",
+                            text = "Inbuilt & Active (${prefs.getMaskedApiKey()})",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = if (hasKey) EmeraldGreen else SunsetAmber
+                            color = EmeraldGreen
                         )
                     }
                 }
@@ -197,32 +204,28 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = {
-                            viewModel.testApiConnection(customKeyInput)
-                        },
+                        onClick = { viewModel.testApiConnection("") },
                         enabled = !uiState.isTestingApi,
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("test_api_connection_button")
+                            .testTag("test_api_button")
                     ) {
                         if (uiState.isTestingApi) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(6.dp))
                         }
-                        Text("Test Connection", style = MaterialTheme.typography.labelMedium)
+                        Text("Test API Connection", style = MaterialTheme.typography.labelMedium)
                     }
 
                     OutlinedButton(
                         onClick = { showKeyEditor = !showKeyEditor },
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag("configure_api_key_button")
+                        modifier = Modifier.testTag("edit_key_button")
                     ) {
                         Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (showKeyEditor) "Hide" else "Set Key", style = MaterialTheme.typography.labelMedium)
+                        Text(if (showKeyEditor) "Close" else "Custom Key", style = MaterialTheme.typography.labelMedium)
                     }
                 }
 
@@ -230,52 +233,44 @@ fun SettingsScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 8.dp),
+                            .padding(top = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "Set Custom XKIRO_API_KEY",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
                         OutlinedTextField(
                             value = customKeyInput,
                             onValueChange = { customKeyInput = it },
-                            placeholder = { Text("Paste XKIRO Bearer Token...") },
-                            modifier = Modifier.fillMaxWidth(),
-                            visualTransformation = PasswordVisualTransformation(),
-                            shape = RoundedCornerShape(8.dp)
+                            label = { Text("Override with Custom XKIRO Key") },
+                            placeholder = { Text("sk-xt-...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
                         )
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Button(
                                 onClick = {
                                     if (customKeyInput.isNotBlank()) {
                                         prefs.setCustomApiKey(customKeyInput)
-                                        showKeyEditor = false
+                                        Toast.makeText(context, "Custom API key saved", Toast.LENGTH_SHORT).show()
                                         customKeyInput = ""
-                                        Toast.makeText(context, "API Key saved securely", Toast.LENGTH_SHORT).show()
+                                        showKeyEditor = false
                                     }
                                 },
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("Save Key")
+                                Text("Save Custom Key")
                             }
-
                             OutlinedButton(
                                 onClick = {
                                     prefs.clearCustomApiKey()
-                                    customKeyInput = ""
-                                    Toast.makeText(context, "Custom key cleared", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Reverted to inbuilt key", Toast.LENGTH_SHORT).show()
+                                    showKeyEditor = false
                                 },
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
+                                shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("Reset to Default")
+                                Text("Reset to Inbuilt")
                             }
                         }
                     }
@@ -345,7 +340,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = if (isFirebaseReady) "Connected & Active" else "Ready (Awaiting google-services.json)",
+                            text = if (isFirebaseReady) "Active & Connected" else "Inbuilt Engine Ready",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
                             color = if (isFirebaseReady) EmeraldGreen else SunsetAmber
@@ -416,6 +411,58 @@ fun SettingsScreen(
                     ) {
                         Text("Test DB", style = MaterialTheme.typography.labelMedium)
                     }
+
+                    OutlinedButton(
+                        onClick = { showFirebaseConfigEditor = !showFirebaseConfigEditor },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(if (showFirebaseConfigEditor) "Hide" else "Config", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+
+                if (showFirebaseConfigEditor) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = fbProjectId,
+                            onValueChange = { fbProjectId = it },
+                            label = { Text("Firebase Project ID") },
+                            placeholder = { Text("e.g. my-promptflow-app") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = fbApiKey,
+                            onValueChange = { fbApiKey = it },
+                            label = { Text("Web API Key") },
+                            placeholder = { Text("AIzaSy...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = fbAppId,
+                            onValueChange = { fbAppId = it },
+                            label = { Text("Mobile App ID") },
+                            placeholder = { Text("1:123456789:android:...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                viewModel.saveFirebaseConfig(fbProjectId, fbApiKey, fbAppId)
+                                Toast.makeText(context, "Firebase configuration saved", Toast.LENGTH_SHORT).show()
+                                showFirebaseConfigEditor = false
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Connect Firebase Project")
+                        }
+                    }
                 }
 
                 Surface(
@@ -425,14 +472,14 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
                         Text(
-                            text = "Firebase Setup Guide:",
+                            text = "ফায়ারবেস সংযোগ নির্দেশিকা (Firebase Setup):",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "To link your live Firebase project, download google-services.json from the Firebase Console (Firestore enabled) and place it into the app/ directory.",
+                            text = "আপনার ফায়ারবেস প্রজেক্টের সাথে যুক্ত করতে Firebase Console থেকে google-services.json ফাইলটি ডাউনলোড করে app/ ফোল্ডারে রাখুন অথবা উপরের Config বাটনে চাপ দিয়ে প্রজেক্ট আইডি যুক্ত করুন।",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -452,62 +499,89 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 SectionHeader(
-                    title = "Default Prompt Settings",
-                    subtitle = "Set default parameters for new generations",
-                    icon = Icons.Default.DisplaySettings
+                    title = "Default Prompt Preferences",
+                    subtitle = "Set presets for newly created prompts",
+                    icon = Icons.Default.Tune
                 )
 
+                // Aspect ratio
                 Text(
                     text = "Default Aspect Ratio",
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                FilterChipGroup(
-                    items = listOf("9:16", "16:9", "1:1"),
-                    selectedItem = defaultRatio,
-                    onItemSelected = {
-                        defaultRatio = it
-                        prefs.setDefaultAspectRatio(it)
-                        viewModel.updateAspectRatio(it)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("9:16", "16:9", "1:1").forEach { ratio ->
+                        FilterChip(
+                            selected = defaultRatio == ratio,
+                            onClick = {
+                                defaultRatio = ratio
+                                prefs.setDefaultAspectRatio(ratio)
+                            },
+                            label = { Text(ratio) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
                     }
-                )
+                }
 
+                // Duration
                 Text(
                     text = "Default Duration",
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                FilterChipGroup(
-                    items = listOf("8 seconds", "10 seconds", "15 seconds", "20 seconds"),
-                    selectedItem = defaultDuration,
-                    onItemSelected = {
-                        defaultDuration = it
-                        prefs.setDefaultDuration(it)
-                        viewModel.updateDuration(it)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("8 seconds", "10 seconds", "15 seconds", "20 seconds").forEach { dur ->
+                        FilterChip(
+                            selected = defaultDuration == dur,
+                            onClick = {
+                                defaultDuration = dur
+                                prefs.setDefaultDuration(dur)
+                            },
+                            label = { Text(dur) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
                     }
-                )
+                }
 
+                // Style
                 Text(
-                    text = "Default Video Style",
+                    text = "Default Style",
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                FilterChipGroup(
-                    items = listOf("Cinematic", "Realistic", "Commercial"),
-                    selectedItem = defaultStyle,
-                    onItemSelected = {
-                        defaultStyle = it
-                        prefs.setDefaultStyle(it)
-                        viewModel.updateVideoStyle(it)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("Cinematic", "Realistic", "Commercial").forEach { style ->
+                        FilterChip(
+                            selected = defaultStyle == style,
+                            onClick = {
+                                defaultStyle = style
+                                prefs.setDefaultStyle(style)
+                            },
+                            label = { Text(style) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
                     }
-                )
+                }
             }
         }
 
-        // Appearance & Theme Card
+        // Appearance Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -522,56 +596,72 @@ fun SettingsScreen(
             ) {
                 SectionHeader(
                     title = "Appearance & Theme",
-                    subtitle = "Choose app color appearance",
+                    subtitle = "Switch visual styling mode",
                     icon = Icons.Default.Palette
                 )
 
-                FilterChipGroup(
-                    items = listOf("DARK", "LIGHT", "SYSTEM"),
-                    selectedItem = currentTheme,
-                    onItemSelected = { viewModel.preferencesManager.setTheme(it) }
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("DARK", "LIGHT", "SYSTEM").forEach { theme ->
+                        FilterChip(
+                            selected = currentTheme == theme,
+                            onClick = {
+                                prefs.setTheme(theme)
+                            },
+                            label = {
+                                Text(
+                                    when (theme) {
+                                        "DARK" -> "Dark Mode"
+                                        "LIGHT" -> "Light Mode"
+                                        else -> "System"
+                                    }
+                                )
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    }
+                }
             }
         }
 
-        // Security Notice Card
+        // About & Guidelines Card
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-            ),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = CardDefaults.outlinedCardBorder()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = null,
-                        tint = NeonCyan,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Security & Privacy",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
+                SectionHeader(
+                    title = "PromptFlow Master Engine Spec",
+                    subtitle = "Strict adherence to 22-part video directives",
+                    icon = Icons.Default.DisplaySettings
+                )
+
                 Text(
-                    text = "API keys are injected via BuildConfig or encrypted preferences and are never exposed in public source or unmasked UI. Your scripts and prompts remain strictly confidential.",
+                    text = "• Preserves original dialogue completely (Bengali, English, mixed)\n" +
+                            "• Mandates one continuous voice take, no repetition, clean stop\n" +
+                            "• Synchronizes cutaway B-roll semantically with spoken words\n" +
+                            "• Ensures 100% character face and identity consistency with reference image\n" +
+                            "• Includes strict negative prompts eliminating common video AI artifacts\n" +
+                            "• Inbuilt persistence: Room Database + Firebase Cloud Firestore",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
     }
 }

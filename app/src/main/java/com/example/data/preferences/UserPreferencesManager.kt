@@ -12,11 +12,19 @@ class UserPreferencesManager(context: Context) {
         context.getSharedPreferences("promptflow_prefs", Context.MODE_PRIVATE)
 
     companion object {
+        const val DEFAULT_INBUILT_API_KEY = "sk-xt-94dbf742fd854824a1c886f5d008699664b3ed020abeb7b4"
+        const val DEFAULT_API_URL = "https://api.xkiro.com/v1/chat/completions"
+        const val DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash:free"
+
         private const val KEY_CUSTOM_API_KEY = "custom_api_key"
         private const val KEY_THEME = "app_theme"
         private const val KEY_DEFAULT_ASPECT_RATIO = "default_aspect_ratio"
         private const val KEY_DEFAULT_DURATION = "default_duration"
         private const val KEY_DEFAULT_STYLE = "default_style"
+
+        private const val KEY_FIREBASE_PROJECT_ID = "firebase_project_id"
+        private const val KEY_FIREBASE_API_KEY = "firebase_api_key"
+        private const val KEY_FIREBASE_APP_ID = "firebase_app_id"
     }
 
     private val _themeFlow = MutableStateFlow(getTheme())
@@ -35,7 +43,8 @@ class UserPreferencesManager(context: Context) {
         if (buildConfigKey.isNotEmpty() && !buildConfigKey.contains("your_xkiro_api_key")) {
             return buildConfigKey
         }
-        return ""
+        // Inbuilt default key provided by user
+        return DEFAULT_INBUILT_API_KEY
     }
 
     fun hasApiKey(): Boolean {
@@ -55,6 +64,31 @@ class UserPreferencesManager(context: Context) {
 
     fun clearCustomApiKey() {
         prefs.edit().remove(KEY_CUSTOM_API_KEY).apply()
+    }
+
+    // Firebase preferences
+    fun getFirebaseProjectId(): String {
+        return prefs.getString(KEY_FIREBASE_PROJECT_ID, "")?.trim() ?: ""
+    }
+
+    fun setFirebaseProjectId(id: String) {
+        prefs.edit().putString(KEY_FIREBASE_PROJECT_ID, id.trim()).apply()
+    }
+
+    fun getFirebaseApiKey(): String {
+        return prefs.getString(KEY_FIREBASE_API_KEY, "")?.trim() ?: ""
+    }
+
+    fun setFirebaseApiKey(key: String) {
+        prefs.edit().putString(KEY_FIREBASE_API_KEY, key.trim()).apply()
+    }
+
+    fun getFirebaseAppId(): String {
+        return prefs.getString(KEY_FIREBASE_APP_ID, "")?.trim() ?: ""
+    }
+
+    fun setFirebaseAppId(appId: String) {
+        prefs.edit().putString(KEY_FIREBASE_APP_ID, appId.trim()).apply()
     }
 
     fun getTheme(): String {
