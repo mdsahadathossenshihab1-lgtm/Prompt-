@@ -35,12 +35,27 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
           cache: 'gradle'
+
+      - name: Setup Android SDK Platform 36 & Licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0" || true
+
+      - name: Restore Debug Keystore
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+            echo "Successfully restored debug.keystore from debug.keystore.base64"
+          elif [ ! -f debug.keystore ]; then
+            echo "Generating fallback debug keystore..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Make Gradlew Executable
         run: chmod +x gradlew
@@ -54,13 +69,13 @@ jobs:
               touch .env
             fi
           fi
-          # If repository secret XKIRO_API_KEY is configured, inject it
+          # If repository secret XKIRO_API_KEY is configured in GitHub repository secrets, inject it
           if [ -n "${{ secrets.XKIRO_API_KEY }}" ]; then
             echo "XKIRO_API_KEY=${{ secrets.XKIRO_API_KEY }}" >> .env
           fi
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Prepare Release APK Asset
         id: prepare_apk
@@ -97,9 +112,9 @@ jobs:
             echo "title=${{ inputs.release_title }}" >> $GITHUB_OUTPUT
             echo "should_release=true" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event_name }}" == "push" && ("${{ github.ref_name }}" == "main" || "${{ github.ref_name }}" == "master") ]]; then
-            # Automatic latest release on push to main
+            # Automatic latest release on push to main or master
             echo "tag=v1.0.0" >> $GITHUB_OUTPUT
-            echo "title=PromptFlow AI v1.0.0 (Latest Build)" >> $GITHUB_OUTPUT
+            echo "title=PromptFlow AI v1.0.0 (Latest Release)" >> $GITHUB_OUTPUT
             echo "should_release=true" >> $GITHUB_OUTPUT
           else
             echo "should_release=false" >> $GITHUB_OUTPUT

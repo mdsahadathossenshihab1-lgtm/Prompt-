@@ -37,6 +37,11 @@
 3. **Artifacts ডাউনলোড:**
    - যেকোনো বিল্ড রানের ভেতর ঢুকলে **Artifacts** সেকশনেও `PromptFlow-AI-APK` জিপ আকারে পাওয়া যাবে।
 
+4. **GitHub Workflow Permissions (গুরুত্বপূর্ণ সেটিংস):**
+   - GitHub Release এ APK ফাইল স্বয়ংক্রিয়ভাবে আপলোড করার জন্য রিপোজিটরি সেটিংসে যান:
+     - **Settings** -> **Actions** -> **General** এ স্ক্রল করে নিচে **Workflow permissions** এ যান।
+     - **"Read and write permissions"** অপশনটি নির্বাচন করুন এবং **Save** করুন।
+
 ---
 
 ## ✨ Features (অ্যাপের মূল বৈশিষ্ট্যসমূহ)
