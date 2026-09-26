@@ -5,13 +5,19 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.firebase.FirebaseManager
 import com.example.data.firebase.FirestorePromptModel
+import com.example.data.local.AiModelEntity
 import com.example.data.local.AppDatabase
 import com.example.data.local.PromptHistoryEntity
 import com.example.data.preferences.UserPreferencesManager
+import com.example.data.remote.AiModelGeneratorService
+import com.example.data.remote.GeneratedModelResult
 import com.example.data.remote.PromptGeneratorService
+import com.example.data.repository.AiModelRepository
 import com.example.data.repository.FirestorePromptRepository
 import com.example.data.repository.FirestorePromptRepositoryImpl
 import com.example.data.repository.PromptHistoryRepository
+import com.example.model.AiModelConfig
+import com.example.model.ModelPreset
 import com.example.model.PromptConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -34,12 +40,25 @@ data class PromptUiState(
     val lastGeneratedConfig: PromptConfig? = null
 )
 
+data class AiModelUiState(
+    val isGenerating: Boolean = false,
+    val generatedResult: GeneratedModelResult? = null,
+    val errorMessage: String? = null,
+    val infoMessage: String? = null,
+    val isModelLocked: Boolean = false,
+    val lockedModelSeed: Long? = null,
+    val lockedModelName: String? = null,
+    val isSavedToLibrary: Boolean = false
+)
+
 class PromptFlowViewModel(application: Application) : AndroidViewModel(application) {
 
     val preferencesManager = UserPreferencesManager(application)
     private val database = AppDatabase.getDatabase(application)
     private val historyRepository = PromptHistoryRepository(database.promptHistoryDao())
+    val aiModelRepository = AiModelRepository(database.aiModelDao())
     private val promptService = PromptGeneratorService()
+    val aiModelGeneratorService = AiModelGeneratorService(application)
     val firebaseManager = FirebaseManager(application)
     val firestoreRepository: FirestorePromptRepository = FirestorePromptRepositoryImpl(firebaseManager)
 
@@ -54,6 +73,27 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _uiState = MutableStateFlow(PromptUiState())
     val uiState: StateFlow<PromptUiState> = _uiState.asStateFlow()
+
+    // AI Model Creator State
+    private val _modelConfig = MutableStateFlow(AiModelConfig())
+    val modelConfig: StateFlow<AiModelConfig> = _modelConfig.asStateFlow()
+
+    private val _modelUiState = MutableStateFlow(AiModelUiState())
+    val modelUiState: StateFlow<AiModelUiState> = _modelUiState.asStateFlow()
+
+    val savedModels: StateFlow<List<AiModelEntity>> = aiModelRepository.allModels
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val favoriteModels: StateFlow<List<AiModelEntity>> = aiModelRepository.favoriteModels
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     val historyList: StateFlow<List<PromptHistoryEntity>> = historyRepository.allHistory
         .stateIn(
@@ -457,5 +497,150 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
 
     fun clearMessages() {
         _uiState.value = _uiState.value.copy(errorMessage = null, infoMessage = null, cloudMessage = null)
+    }
+
+    // ==========================================
+    // MODULE 2: AI MODEL CREATOR OPERATIONS
+    // ==========================================
+
+    fun updateModelConfig(transform: (AiModelConfig) -> AiModelConfig) {
+        _modelConfig.value = transform(_modelConfig.value)
+    }
+
+    fun applyModelPreset(preset: ModelPreset) {
+        _modelConfig.value = preset.config
+        _modelUiState.value = _modelUiState.value.copy(
+            infoMessage = "Applied '${preset.title}' preset settings."
+        )
+    }
+
+    fun generateAiModel(isSimilar: Boolean = false) {
+        val currentCfg = _modelConfig.value
+        _modelUiState.value = _modelUiState.value.copy(
+            isGenerating = true,
+            errorMessage = null,
+            infoMessage = if (isSimilar) "Generating variation with locked identity..." else "Generating video-ready human model...",
+            isSavedToLibrary = false
+        )
+
+        viewModelScope.launch {
+            val result = aiModelGeneratorService.generateModelImage(currentCfg, isSimilar = isSimilar)
+            result.onSuccess { modelResult ->
+                _modelUiState.value = _modelUiState.value.copy(
+                    isGenerating = false,
+                    generatedResult = modelResult,
+                    lockedModelSeed = if (_modelUiState.value.isModelLocked) _modelUiState.value.lockedModelSeed ?: modelResult.seed else modelResult.seed,
+                    lockedModelName = modelResult.suggestedName,
+                    infoMessage = "Model generated successfully!"
+                )
+            }.onFailure { error ->
+                _modelUiState.value = _modelUiState.value.copy(
+                    isGenerating = false,
+                    errorMessage = "Failed to generate model: ${error.localizedMessage}"
+                )
+            }
+        }
+    }
+
+    fun toggleLockModel(lock: Boolean) {
+        val currentResult = _modelUiState.value.generatedResult
+        val seed = currentResult?.seed
+        _modelUiState.value = _modelUiState.value.copy(
+            isModelLocked = lock,
+            lockedModelSeed = if (lock) seed else null,
+            infoMessage = if (lock) "Model locked! Subsequent generations will preserve this character identity." else "Model lock disabled."
+        )
+        _modelConfig.value = _modelConfig.value.copy(
+            isModelLocked = lock,
+            lockedSeed = if (lock) seed else null
+        )
+    }
+
+    fun saveCurrentModelToLibrary(customName: String? = null) {
+        val result = _modelUiState.value.generatedResult ?: return
+        val cfg = _modelConfig.value
+        val modelName = customName?.takeIf { it.isNotBlank() } ?: result.suggestedName
+
+        viewModelScope.launch {
+            val entity = AiModelEntity(
+                name = modelName,
+                imageUrl = result.imageUrl,
+                localFilePath = result.localFilePath,
+                promptText = result.detailedPrompt,
+                gender = cfg.gender,
+                modelType = cfg.modelType,
+                style = cfg.style,
+                environment = cfg.location,
+                cameraFraming = cfg.cameraFraming,
+                aspectRatio = cfg.aspectRatio,
+                seed = result.seed,
+                isFavorite = false,
+                isLocked = _modelUiState.value.isModelLocked
+            )
+            aiModelRepository.insertModel(entity)
+            _modelUiState.value = _modelUiState.value.copy(
+                isSavedToLibrary = true,
+                infoMessage = "Model saved to library as '$modelName'!"
+            )
+        }
+    }
+
+    /**
+     * Section 23: INTEGRATION WITH EXISTING PROMPT GENERATOR
+     * Attaches model reference to the Video Prompt Generator, activates MODEL LOCKED badge,
+     * and prepares Video Prompt Generator to preserve character identity across scenes.
+     */
+    fun useThisModelInPromptGenerator(
+        imageUrl: String? = null,
+        modelName: String? = null,
+        promptDesc: String? = null
+    ) {
+        val activeImageUrl = imageUrl ?: _modelUiState.value.generatedResult?.imageUrl
+        val activeName = modelName ?: _modelUiState.value.generatedResult?.suggestedName ?: "AI Model Presenter"
+        val activeDesc = promptDesc ?: _modelUiState.value.generatedResult?.detailedPrompt ?: _modelConfig.value.description
+
+        if (activeImageUrl != null) {
+            _config.value = _config.value.copy(
+                referenceImageUri = activeImageUrl,
+                referenceImageDescription = "Locked AI Model: $activeName. Features: ${_modelConfig.value.appearance}",
+                presenter = if (_modelConfig.value.gender == "Female") "Female" else "Male",
+                isModelLocked = true,
+                lockedModelName = activeName
+            )
+            _modelUiState.value = _modelUiState.value.copy(
+                infoMessage = "Model '$activeName' attached to Video Prompt Generator! [MODEL LOCKED]"
+            )
+        }
+    }
+
+    fun clearLockedModel() {
+        _config.value = _config.value.copy(
+            isModelLocked = false,
+            lockedModelName = null,
+            referenceImageUri = null,
+            referenceImageDescription = ""
+        )
+    }
+
+    fun deleteSavedModel(model: AiModelEntity) {
+        viewModelScope.launch {
+            aiModelRepository.deleteModel(model)
+            _modelUiState.value = _modelUiState.value.copy(
+                infoMessage = "Removed '${model.name}' from library."
+            )
+        }
+    }
+
+    fun toggleFavoriteModel(id: Long, isFav: Boolean) {
+        viewModelScope.launch {
+            aiModelRepository.toggleFavorite(id, isFav)
+        }
+    }
+
+    fun clearModelMessages() {
+        _modelUiState.value = _modelUiState.value.copy(
+            errorMessage = null,
+            infoMessage = null
+        )
     }
 }

@@ -21,6 +21,7 @@ val CyanDark = Color(0xFF00B4D8)
 val NeonPurple = Color(0xFFA855F7)
 val ElectricIndigo = Color(0xFF6366F1)
 val EmeraldGreen = Color(0xFF10B981)
+val NeonGreen = Color(0xFF00E676)
 val SunsetAmber = Color(0xFFF59E0B)
 val RadiantRose = Color(0xFFF43F5E)
 

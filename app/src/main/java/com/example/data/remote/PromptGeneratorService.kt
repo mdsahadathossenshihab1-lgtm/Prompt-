@@ -406,11 +406,18 @@ Do not discuss how the prompt was created."""
         } else config.onScreenText
 
         val presenterDesc = when {
+            config.isModelLocked && config.lockedModelName != null -> "LOCKED MODEL REFERENCE [${config.lockedModelName}]: Strict identity continuity adhering precisely to the attached AI Model Creator character (lock identical South Asian / Bangladeshi facial geometry, eye shape, nose structure, skin tone, hair styling, and body proportions across all scenes)"
             config.referenceImageUri != null -> "Consistent presenter directly referencing uploaded model image (match identical facial features, skin tone, hair styling, eye structure, body proportions, and wardrobe seamlessly)"
             config.presenter == "Female" -> "Professional female presenter, charismatic, natural expressions, neat contemporary attire"
             config.presenter == "Male" -> "Professional male presenter, engaging and authoritative presence, clean contemporary attire"
             config.presenter == "No presenter" -> "Voiceover narration driven visual sequence without on-camera presenter"
             else -> "Professional presenter matching scene tone and context"
+        }
+
+        val consistencyRule = if (config.isModelLocked) {
+            "STRICT MODEL LOCK ACTIVE: Absolute 100% facial geometry, skin texture, hairstyle, eye color, and wardrobe preservation across all scenes and camera angles. Zero facial drift, zero morphing, zero identity replacement. The AI video generator MUST treat the locked model as the persistent recurring actor."
+        } else {
+            "Absolute 100% facial geometry, skin texture, hairstyle, eye color, and wardrobe preservation across all frames. Zero facial drift, zero morphing."
         }
 
         return buildString {
@@ -420,7 +427,7 @@ Do not discuss how the prompt was created."""
             appendLine("2. RESOLUTION: ${config.resolution} Ultra HD cinematic fidelity")
             appendLine("3. DURATION: $effectiveDuration")
             appendLine("4. REFERENCE CHARACTER: $presenterDesc")
-            appendLine("5. CHARACTER CONSISTENCY: Absolute 100% facial geometry, skin texture, hairstyle, eye color, and wardrobe preservation across all frames. Zero facial drift, zero morphing.")
+            appendLine("5. CHARACTER CONSISTENCY: $consistencyRule")
             appendLine("6. LOCATION: $effectiveLocation")
             appendLine("7. ENVIRONMENT: Realistic, deeply textured atmosphere in $effectiveLocation with true-to-life environmental ambience and authentic depth.")
             appendLine("8. WARDROBE: Perfectly tailored modern professional attire matching the setting, keeping clothing colors and fabric textures constant throughout.")

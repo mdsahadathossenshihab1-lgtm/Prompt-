@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,7 +50,9 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Videocam
@@ -68,6 +71,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -103,6 +107,7 @@ import java.io.FileOutputStream
 @Composable
 fun GeneratorScreen(
     viewModel: PromptFlowViewModel,
+    onNavigateToModelCreator: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.config.collectAsState()
@@ -138,11 +143,16 @@ fun GeneratorScreen(
                 ) {
                     IntroBanner()
                     ScriptCard(config, viewModel, context)
-                    ReferenceImageCard(config, viewModel, onPickImage = {
-                        photoPickerLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
-                    })
+                    ReferenceImageCard(
+                        config = config,
+                        viewModel = viewModel,
+                        onPickImage = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        onNavigateToModelCreator = onNavigateToModelCreator
+                    )
                     VideoSettingsCard(config, viewModel)
                     VisualSettingsCard(config, viewModel)
                     GenerationOptionsCard(config, viewModel)
@@ -178,11 +188,16 @@ fun GeneratorScreen(
             ) {
                 IntroBanner()
                 ScriptCard(config, viewModel, context)
-                ReferenceImageCard(config, viewModel, onPickImage = {
-                    photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                })
+                ReferenceImageCard(
+                    config = config,
+                    viewModel = viewModel,
+                    onPickImage = {
+                        photoPickerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    },
+                    onNavigateToModelCreator = onNavigateToModelCreator
+                )
                 VideoSettingsCard(config, viewModel)
                 VisualSettingsCard(config, viewModel)
                 GenerationOptionsCard(config, viewModel)
@@ -410,26 +425,85 @@ fun ScriptCard(
 fun ReferenceImageCard(
     config: PromptConfig,
     viewModel: PromptFlowViewModel,
-    onPickImage: () -> Unit
+    onPickImage: () -> Unit,
+    onNavigateToModelCreator: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder()
+        border = CardDefaults.outlinedCardBorder().copy(
+            brush = if (config.isModelLocked)
+                Brush.linearGradient(listOf(NeonCyan, NeonPurple))
+            else
+                Brush.linearGradient(listOf(MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)))
+        )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            SectionHeader(
-                title = "Reference Image",
-                subtitle = "Use this image as the exact visual reference for the presenter/model",
-                icon = Icons.Default.AddPhotoAlternate
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SectionHeader(
+                    title = "Reference Image & Character",
+                    subtitle = "Exact visual presenter reference for AI video generation",
+                    icon = Icons.Default.AddPhotoAlternate
+                )
+            }
 
             Spacer(modifier = Modifier.height(10.dp))
+
+            // Prominent MODEL LOCKED Banner (Section 23 Step 5)
+            if (config.isModelLocked) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF0F291E),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(Color(0xFF00E676), NeonCyan))),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Model Locked",
+                                tint = Color(0xFF00E676),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "MODEL LOCKED",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFF00E676)
+                                )
+                                Text(
+                                    text = config.lockedModelName ?: "AI Model Creator Character Active",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.9f)
+                                )
+                            }
+                        }
+
+                        TextButton(
+                            onClick = { viewModel.clearLockedModel() },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text("Unlock", color = Color(0xFF80D8FF), fontSize = 12.sp)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
 
             if (config.referenceImageUri != null) {
                 // Image preview box
@@ -439,7 +513,7 @@ fun ReferenceImageCard(
                         .height(180.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
+                        .border(1.dp, if (config.isModelLocked) NeonCyan else MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp))
                 ) {
                     AsyncImage(
                         model = config.referenceImageUri,
@@ -453,20 +527,21 @@ fun ReferenceImageCard(
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(8.dp),
-                        color = Color.Black.copy(alpha = 0.6f),
+                        color = Color.Black.copy(alpha = 0.7f),
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = "Model Reference Loaded",
-                            color = NeonCyan,
+                            text = if (config.isModelLocked) "🔒 Locked Model Reference" else "Model Reference Loaded",
+                            color = if (config.isModelLocked) Color(0xFF00E676) else NeonCyan,
                             style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
 
                     // Delete button overlay
                     IconButton(
-                        onClick = { viewModel.setReferenceImageUri(null) },
+                        onClick = { viewModel.clearLockedModel() },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(8.dp)
@@ -494,17 +569,17 @@ fun ReferenceImageCard(
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Replace Image", style = MaterialTheme.typography.labelMedium)
+                        Text("Replace Photo", style = MaterialTheme.typography.labelMedium)
                     }
 
                     OutlinedButton(
-                        onClick = { viewModel.setReferenceImageUri(null) },
+                        onClick = onNavigateToModelCreator,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Remove", style = MaterialTheme.typography.labelMedium)
+                        Text("Model Creator", style = MaterialTheme.typography.labelMedium)
                     }
                 }
 
@@ -523,45 +598,92 @@ fun ReferenceImageCard(
                     shape = RoundedCornerShape(8.dp)
                 )
             } else {
-                // Upload trigger box
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                        .border(
-                            1.dp,
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
-                            RoundedCornerShape(12.dp)
-                        )
-                        .clickable { onPickImage() }
-                        .padding(20.dp)
-                        .testTag("upload_reference_image_box"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                // Upload trigger box + Shortcut to AI Model Creator
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable { onPickImage() }
+                            .padding(18.dp)
+                            .testTag("upload_reference_image_box"),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.AddPhotoAlternate,
-                            contentDescription = "Upload",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(36.dp)
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Upload Reference Image",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Supports JPG, PNG, WEBP • Preserves face, hair, clothing, & body tone",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddPhotoAlternate,
+                                contentDescription = "Upload",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Upload Reference Image",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Upload photos to preserve facial geometry and appearance",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Quick Jump to AI Model Creator
+                    Surface(
+                        onClick = onNavigateToModelCreator,
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                        border = CardDefaults.outlinedCardBorder().copy(brush = Brush.linearGradient(listOf(NeonCyan, NeonPurple))),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = NeonCyan,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Generate Model with AI Model Creator",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Create realistic video-ready human model & lock character identity",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = null,
+                                tint = NeonCyan,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }

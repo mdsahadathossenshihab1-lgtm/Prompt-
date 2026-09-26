@@ -28,5 +28,8 @@ data class PromptConfig(
     val noDialogueRepetition: Boolean = true,
     val professionalCameraDirection: Boolean = true,
     val cinematicLighting: Boolean = true,
-    val negativePrompt: Boolean = true
+    val negativePrompt: Boolean = true,
+    // AI Model Creator Integration (Section 23: MODEL LOCKED)
+    val isModelLocked: Boolean = false,
+    val lockedModelName: String? = null
 )
