@@ -1,0 +1,6 @@
+{
+  "name": "PromptFlow AI",
+  "description": "AI Video Master Prompt Generator - Turn dialogue scripts and character references into production-ready AI video master prompts",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
