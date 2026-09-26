@@ -3,37 +3,35 @@ name: Build & Release Android APK
 on:
   push:
     branches:
-      - main
-      - master
+      - '**'
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
-      create_release:
-        description: 'Publish as GitHub Release'
-        required: true
-        type: boolean
-        default: true
       tag_name:
-        description: 'Release Tag Name (e.g. v1.0.0)'
+        description: 'Release Tag Name (leave empty for auto tag)'
         required: false
-        default: 'v1.0.0'
+        default: ''
       release_title:
-        description: 'Release Title'
+        description: 'Release Title (leave empty for auto title)'
         required: false
-        default: 'PromptFlow AI v1.0.0'
+        default: ''
 
 permissions:
   contents: write
+  packages: write
+  actions: read
 
 jobs:
   build:
-    name: Build PromptFlow AI APK
+    name: Build & Release PromptFlow AI APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -69,7 +67,6 @@ jobs:
               touch .env
             fi
           fi
-          # If repository secret XKIRO_API_KEY is configured in GitHub repository secrets, inject it
           if [ -n "${{ secrets.XKIRO_API_KEY }}" ]; then
             echo "XKIRO_API_KEY=${{ secrets.XKIRO_API_KEY }}" >> .env
           fi
@@ -93,7 +90,7 @@ jobs:
           APK_DEST="PromptFlow-AI.apk"
           if [ -f "$APK_SRC" ]; then
             cp "$APK_SRC" "$APK_DEST"
-            echo "APK generated successfully at $APK_DEST"
+            echo "APK generated successfully at $APK_DEST ($(du -h $APK_DEST | cut -f1))"
             echo "apk_path=$APK_DEST" >> $GITHUB_OUTPUT
           else
             echo "Error: APK not found at $APK_SRC"
@@ -107,59 +104,66 @@ jobs:
           path: PromptFlow-AI.apk
           retention-days: 30
 
-      - name: Determine Release Tag
+      - name: Determine Release Tag & Version
         id: release_info
         run: |
+          BUILD_NUM="${{ github.run_number }}"
+          TIMESTAMP="$(date +'%Y%m%d-%H%M')"
+          
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
-            echo "tag=$TAG" >> $GITHUB_OUTPUT
-            echo "title=PromptFlow AI $TAG" >> $GITHUB_OUTPUT
-            echo "should_release=true" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.create_release }}" == "true" ]]; then
+            TITLE="PromptFlow AI $TAG"
+          elif [ -n "${{ inputs.tag_name }}" ]; then
             TAG="${{ inputs.tag_name }}"
-            echo "tag=$TAG" >> $GITHUB_OUTPUT
-            echo "title=${{ inputs.release_title }}" >> $GITHUB_OUTPUT
-            echo "should_release=true" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event_name }}" == "push" && ("${{ github.ref_name }}" == "main" || "${{ github.ref_name }}" == "master") ]]; then
-            # Automatic latest release on push to main or master
-            echo "tag=v1.0.0" >> $GITHUB_OUTPUT
-            echo "title=PromptFlow AI v1.0.0 (Latest Release)" >> $GITHUB_OUTPUT
-            echo "should_release=true" >> $GITHUB_OUTPUT
+            TITLE="${{ inputs.release_title }}"
+            if [ -z "$TITLE" ]; then
+              TITLE="PromptFlow AI $TAG"
+            fi
           else
-            echo "should_release=false" >> $GITHUB_OUTPUT
+            # Create rolling latest release with unique build tag so GitHub Release always updates & appears at top
+            TAG="v1.0.0-build${BUILD_NUM}"
+            TITLE="PromptFlow AI v1.0.0 (Build #${BUILD_NUM})"
           fi
+          
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+          echo "tag: $TAG, title: $TITLE"
 
-      - name: Create or Update GitHub Release
-        if: steps.release_info.outputs.should_release == 'true'
+      - name: Publish or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release_info.outputs.tag }}
           name: ${{ steps.release_info.outputs.title }}
           draft: false
           prerelease: false
+          make_latest: true
           files: PromptFlow-AI.apk
           body: |
             ## 🎬 PromptFlow AI — AI Video Master Prompt Generator
-
+            
             ### 📱 Download Android APK
             Download **`PromptFlow-AI.apk`** from the **Assets** section below and install it directly on your Android phone!
-
+            
+            - **App Name:** PromptFlow AI
+            - **Build:** ${{ steps.release_info.outputs.tag }} (Run #${{ github.run_number }})
+            - **Commit:** `${{ github.sha }}`
+            
             ---
-
-            ### 🚀 Features in this Release:
-            - **AI Video Master Prompt Generation**: DeepSeek V4.1 Flash integration via XKIRO API for professional video prompts (Google Flow, Sora, Runway, Kling).
-            - **Exact Dialogue Preservation**: Supports Bengali, English, Banglish, and mixed languages without unwanted rewriting.
-            - **Character Reference Image**: Upload model/presenter photos; ensures 100% facial geometry, clothing, and appearance consistency.
-            - **Strict 22-Point Cinematography Rules**: Camera angles, lighting, one continuous voice take, natural lip-sync, and semantic B-roll cutaway synchronization.
-            - **Room Local Database + Firebase Cloud Firestore**: Save, view, copy, edit, and back up prompts to the cloud with one tap.
-            - **Export & Share**: Direct prompt clipboard copy, editable viewer, and `.txt` file export.
-
+            
+            ### 🚀 Features & Updates:
+            - **AI Video Master Prompt Generation**: DeepSeek V4.1 Flash via XKIRO API.
+            - **Inbuilt Firebase Cloud Database**: Full CRUD operations + real-time backup and sync on Firestore (`ai-studio-promptflowai-33eaf848-a774-4d54-9ed1-e99f251be592`).
+            - **Exact Dialogue Preservation**: Bengali, English, Banglish dialogue without unwanted rewriting.
+            - **Character Reference Image**: Upload model image to preserve face, skin tone, hair, and clothing consistency.
+            - **Strict 22-Point Cinematography Rules**: Camera angles, lighting, continuous single-voice take, lip-sync, and semantic B-roll cutaway synchronization.
+            - **Room Local Database**: Offline caching, history search, copy-to-clipboard, in-line editor, and cloud sync.
+            
             ---
-
+            
             ### 📲 How to Install on Android / মোবাইলে ইনস্টল করার নিয়ম:
             1. নিচে দেওয়া **`PromptFlow-AI.apk`** ফাইলে ক্লিক করে ডাউনলোড করুন।
             2. ডাউনলোড শেষে ফাইলটিতে ক্লিক করুন।
             3. যদি *"Install unknown apps"* বা অনুমতি চায়, ব্রাউজার বা ফাইল ম্যানেজারকে অনুমতি (Allow) দিন।
-            4. **Install** বাটনে ট্যাপ করলেই অ্যাপটি আপনার ফোনে ইনস্টল হয়ে যাবে!
+            4. **Install** বাটনে ট্যাপ করলেই অ্যাপটি ইনস্টল হয়ে যাবে!
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
