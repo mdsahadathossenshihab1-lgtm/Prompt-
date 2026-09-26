@@ -9,6 +9,8 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.PromptHistoryEntity
 import com.example.data.preferences.UserPreferencesManager
 import com.example.data.remote.PromptGeneratorService
+import com.example.data.repository.FirestorePromptRepository
+import com.example.data.repository.FirestorePromptRepositoryImpl
 import com.example.data.repository.PromptHistoryRepository
 import com.example.model.PromptConfig
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +41,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
     private val historyRepository = PromptHistoryRepository(database.promptHistoryDao())
     private val promptService = PromptGeneratorService()
     val firebaseManager = FirebaseManager(application)
+    val firestoreRepository: FirestorePromptRepository = FirestorePromptRepositoryImpl(firebaseManager)
 
     private val _config = MutableStateFlow(
         PromptConfig(
@@ -289,7 +292,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
                 camera = config.camera,
                 hasReferenceImage = config.referenceImageUri != null
             )
-            val syncResult = firebaseManager.savePromptToCloud(firestoreModel)
+            val syncResult = firestoreRepository.createPrompt(firestoreModel)
             syncResult.onSuccess { docId ->
                 historyRepository.updateCloudSyncStatus(insertedId, true, docId)
             }
@@ -316,7 +319,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
                 timestamp = item.timestamp
             )
 
-            val result = firebaseManager.savePromptToCloud(model)
+            val result = firestoreRepository.createPrompt(model)
             result.onSuccess { docId ->
                 historyRepository.updateCloudSyncStatus(item.id, true, docId)
                 _uiState.value = _uiState.value.copy(
@@ -362,7 +365,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
                     hasReferenceImage = item.hasReferenceImage,
                     timestamp = item.timestamp
                 )
-                val result = firebaseManager.savePromptToCloud(model)
+                val result = firestoreRepository.createPrompt(model)
                 if (result.isSuccess) {
                     val docId = result.getOrNull()
                     historyRepository.updateCloudSyncStatus(item.id, true, docId)
@@ -422,7 +425,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             val item = historyRepository.getById(id)
             if (item?.cloudDocumentId != null) {
-                firebaseManager.deletePromptFromCloud(item.cloudDocumentId)
+                firestoreRepository.deletePrompt(item.cloudDocumentId)
             }
             historyRepository.deleteById(id)
         }
