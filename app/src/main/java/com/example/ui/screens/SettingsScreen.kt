@@ -118,7 +118,7 @@ fun SettingsScreen(
             ) {
                 SectionHeader(
                     title = "Inbuilt AI Video Engine",
-                    subtitle = "XKIRO Chat Completions • DeepSeek V4.1 Flash",
+                    subtitle = "FlushAPI • Claude Opus 4.7 & GPT-5.6 Luna (Dual-Core Engine)",
                     icon = Icons.Default.Speed
                 )
 
@@ -128,12 +128,12 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "AI Model",
+                        text = "AI Model Engine",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     AppBadge(
-                        text = "deepseek/deepseek-v4.1-flash:free",
+                        text = "claude-opus-4-7 & gpt-5.6-luna",
                         backgroundColor = MaterialTheme.colorScheme.primaryContainer,
                         textColor = MaterialTheme.colorScheme.onPrimaryContainer
                     )
@@ -150,7 +150,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "https://api.xkiro.com/v1",
+                        text = "https://flushapi.fun/v1",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -239,8 +239,8 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = customKeyInput,
                             onValueChange = { customKeyInput = it },
-                            label = { Text("Override with Custom XKIRO Key") },
-                            placeholder = { Text("sk-xt-...") },
+                            label = { Text("Override with Custom FlushAPI Key") },
+                            placeholder = { Text("sk-...") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )

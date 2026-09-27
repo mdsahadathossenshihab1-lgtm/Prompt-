@@ -21,12 +21,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Person
@@ -37,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -58,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.AppBadge
+import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.GeneratorScreen
 import com.example.ui.screens.HistoryScreen
 import com.example.ui.screens.ModelCreatorScreen
@@ -70,6 +74,7 @@ enum class AppTab(val title: String) {
     VIDEO_PROMPTS("Video Prompts"),
     MODEL_CREATOR("Model Creator"),
     HISTORY("History"),
+    AUTH("Account"),
     SETTINGS("Settings")
 }
 
@@ -81,6 +86,19 @@ fun MainAppScreen(
 ) {
     var selectedTab by remember { mutableStateOf(AppTab.VIDEO_PROMPTS) }
     val config by viewModel.config.collectAsState()
+    val authState by viewModel.authUiState.collectAsState()
+
+    // MANDATORY AUTH GATE:
+    // When the user opens the app, the Login / Sign Up screen must appear first.
+    // The user cannot use or navigate the app until authenticated with Firebase.
+    if (authState.currentUser == null) {
+        AuthScreen(
+            viewModel = viewModel,
+            isAuthGate = true,
+            modifier = modifier
+        )
+        return
+    }
 
     // Android back button handling: return to Video Prompts if on sub-screens
     BackHandler(enabled = selectedTab != AppTab.VIDEO_PROMPTS) {
@@ -124,42 +142,64 @@ fun MainAppScreen(
                                 fontWeight = FontWeight.Black,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            AppBadge(
-                                text = when (selectedTab) {
-                                    AppTab.VIDEO_PROMPTS -> "MODULE 1: PROMPTS"
-                                    AppTab.MODEL_CREATOR -> "MODULE 2: MODEL CREATOR"
-                                    AppTab.HISTORY -> "HISTORY"
-                                    AppTab.SETTINGS -> "SETTINGS"
-                                },
-                                backgroundColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                                textColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
                         }
 
-                        // Locked Model indicator in TopBar
-                        if (config.isModelLocked) {
+                        // Right side items in TopBar
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Locked Model indicator in TopBar
+                            if (config.isModelLocked) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = NeonGreen.copy(alpha = 0.15f),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { selectedTab = AppTab.MODEL_CREATOR }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = NeonGreen,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "LOCKED",
+                                            color = NeonGreen,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+
+                            // Firebase Profile / Login Button in TopBar
+                            val currentUser = authState.currentUser
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = NeonGreen.copy(alpha = 0.15f),
+                                color = if (currentUser != null) NeonCyan.copy(alpha = 0.15f) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(12.dp))
-                                    .clickable { selectedTab = AppTab.MODEL_CREATOR }
+                                    .clickable { selectedTab = AppTab.AUTH }
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Lock,
-                                        contentDescription = null,
-                                        tint = NeonGreen,
-                                        modifier = Modifier.size(13.dp)
+                                        imageVector = Icons.Default.AccountCircle,
+                                        contentDescription = "User Account",
+                                        tint = if (currentUser != null) NeonCyan else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "LOCKED",
-                                        color = NeonGreen,
+                                        text = if (currentUser != null) (currentUser.displayName?.take(8) ?: currentUser.email?.substringBefore("@")?.take(8) ?: "User") else "লগইন",
+                                        color = if (currentUser != null) NeonCyan else MaterialTheme.colorScheme.primary,
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -189,7 +229,7 @@ fun MainAppScreen(
                             contentDescription = "Video Prompts"
                         )
                     },
-                    label = { Text("Video Prompts", fontSize = 11.sp, maxLines = 1) },
+                    label = { Text("Prompts", fontSize = 11.sp, maxLines = 1) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -208,7 +248,7 @@ fun MainAppScreen(
                             contentDescription = "Model Creator"
                         )
                     },
-                    label = { Text("Model Creator", fontSize = 11.sp, maxLines = 1) },
+                    label = { Text("Models", fontSize = 11.sp, maxLines = 1) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -234,6 +274,25 @@ fun MainAppScreen(
                         indicatorColor = MaterialTheme.colorScheme.primaryContainer
                     ),
                     modifier = Modifier.testTag("nav_history_tab")
+                )
+
+                // Account / Auth
+                NavigationBarItem(
+                    selected = selectedTab == AppTab.AUTH,
+                    onClick = { selectedTab = AppTab.AUTH },
+                    icon = {
+                        Icon(
+                            imageVector = if (selectedTab == AppTab.AUTH) Icons.Filled.AccountCircle else Icons.Outlined.AccountCircle,
+                            contentDescription = "Account"
+                        )
+                    },
+                    label = { Text("লগইন", fontSize = 11.sp, maxLines = 1) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    modifier = Modifier.testTag("nav_auth_tab")
                 )
 
                 // Settings
@@ -277,6 +336,10 @@ fun MainAppScreen(
                 AppTab.HISTORY -> HistoryScreen(
                     viewModel = viewModel,
                     onNavigateToGenerator = { selectedTab = AppTab.VIDEO_PROMPTS }
+                )
+                AppTab.AUTH -> AuthScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = { selectedTab = AppTab.VIDEO_PROMPTS }
                 )
                 AppTab.SETTINGS -> SettingsScreen(viewModel = viewModel)
             }

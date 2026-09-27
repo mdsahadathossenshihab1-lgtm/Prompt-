@@ -3,6 +3,7 @@ package com.example.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.firebase.EmailNotVerifiedException
 import com.example.data.firebase.FirebaseManager
 import com.example.data.firebase.FirestorePromptModel
 import com.example.data.local.AiModelEntity
@@ -19,12 +20,24 @@ import com.example.data.repository.PromptHistoryRepository
 import com.example.model.AiModelConfig
 import com.example.model.ModelPreset
 import com.example.model.PromptConfig
+import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+data class AuthUiState(
+    val currentUser: FirebaseUser? = null,
+    val isLoading: Boolean = false,
+    val errorMessage: String? = null,
+    val successMessage: String? = null,
+    val requiresEmailVerification: Boolean = false,
+    val pendingVerificationEmail: String = "",
+    val pendingVerificationPassword: String = "",
+    val isCheckingVerification: Boolean = false
+)
 
 data class PromptUiState(
     val isGenerating: Boolean = false,
@@ -42,6 +55,8 @@ data class PromptUiState(
 
 data class AiModelUiState(
     val isGenerating: Boolean = false,
+    val isEditing: Boolean = false,
+    val isSavingToGallery: Boolean = false,
     val generatedResult: GeneratedModelResult? = null,
     val errorMessage: String? = null,
     val infoMessage: String? = null,
@@ -80,6 +95,20 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _modelUiState = MutableStateFlow(AiModelUiState())
     val modelUiState: StateFlow<AiModelUiState> = _modelUiState.asStateFlow()
+
+    private val _authUiState = MutableStateFlow(AuthUiState(currentUser = firebaseManager.getCurrentUser()))
+    val authUiState: StateFlow<AuthUiState> = _authUiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            firebaseManager.currentUserFlow.collect { user ->
+                _authUiState.value = _authUiState.value.copy(
+                    currentUser = user,
+                    isLoading = false
+                )
+            }
+        }
+    }
 
     val savedModels: StateFlow<List<AiModelEntity>> = aiModelRepository.allModels
         .stateIn(
@@ -641,6 +670,275 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         _modelUiState.value = _modelUiState.value.copy(
             errorMessage = null,
             infoMessage = null
+        )
+    }
+
+    /**
+     * Edits the existing generated model with a new user modification prompt,
+     * maintaining continuity of identity and seed.
+     */
+    fun editModelWithPrompt(editInstruction: String) {
+        val currentResult = _modelUiState.value.generatedResult ?: return
+        if (editInstruction.isBlank()) return
+
+        _modelUiState.value = _modelUiState.value.copy(
+            isEditing = true,
+            errorMessage = null,
+            infoMessage = "Applying edits to model with prompt: \"$editInstruction\"..."
+        )
+
+        viewModelScope.launch {
+            val result = aiModelGeneratorService.editModelImage(
+                originalResult = currentResult,
+                editPrompt = editInstruction,
+                currentConfig = _modelConfig.value
+            )
+
+            result.onSuccess { updatedResult ->
+                _modelUiState.value = _modelUiState.value.copy(
+                    isEditing = false,
+                    generatedResult = updatedResult,
+                    infoMessage = "Model successfully updated with edits!"
+                )
+            }.onFailure { err ->
+                _modelUiState.value = _modelUiState.value.copy(
+                    isEditing = false,
+                    errorMessage = "Edit failed: ${err.localizedMessage ?: err.message}"
+                )
+            }
+        }
+    }
+
+    /**
+     * Directly downloads the generated model image to the user's phone Gallery (Pictures/PromptFlowAI)
+     */
+    fun saveModelToPhoneGallery(customName: String? = null) {
+        val currentResult = _modelUiState.value.generatedResult ?: return
+        val targetPath = currentResult.localFilePath ?: currentResult.imageUrl
+        val name = customName?.takeIf { it.isNotBlank() } ?: currentResult.suggestedName
+
+        _modelUiState.value = _modelUiState.value.copy(
+            isSavingToGallery = true,
+            errorMessage = null
+        )
+
+        viewModelScope.launch {
+            val res = aiModelGeneratorService.saveImageToPhoneGallery(targetPath, name)
+            res.onSuccess { msg ->
+                _modelUiState.value = _modelUiState.value.copy(
+                    isSavingToGallery = false,
+                    infoMessage = msg
+                )
+            }.onFailure { err ->
+                _modelUiState.value = _modelUiState.value.copy(
+                    isSavingToGallery = false,
+                    errorMessage = "গ্যালারিতে সেভ করতে সমস্যা হয়েছে: ${err.localizedMessage}"
+                )
+            }
+        }
+    }
+
+    // ==========================================
+    // FIREBASE AUTHENTICATION ACTIONS
+    // ==========================================
+
+    fun signInWithEmail(email: String, pass: String) {
+        if (email.isBlank() || pass.isBlank()) {
+            _authUiState.value = _authUiState.value.copy(errorMessage = "ইমেইল এবং পাসওয়ার্ড প্রদান করুন")
+            return
+        }
+
+        _authUiState.value = _authUiState.value.copy(isLoading = true, errorMessage = null, successMessage = null)
+        viewModelScope.launch {
+            val result = firebaseManager.signInWithEmail(email, pass)
+            result.onSuccess { user ->
+                _authUiState.value = _authUiState.value.copy(
+                    isLoading = false,
+                    currentUser = user,
+                    requiresEmailVerification = false,
+                    pendingVerificationEmail = "",
+                    pendingVerificationPassword = "",
+                    successMessage = "স্বাগতম ${user.displayName ?: user.email}! লগইন সফল হয়েছে।"
+                )
+            }.onFailure { err ->
+                if (err is EmailNotVerifiedException) {
+                    _authUiState.value = _authUiState.value.copy(
+                        isLoading = false,
+                        currentUser = null,
+                        requiresEmailVerification = true,
+                        pendingVerificationEmail = email.trim(),
+                        pendingVerificationPassword = pass,
+                        errorMessage = "আপনার ইমেইলটি এখনো ভেরিফাই করা হয়নি! আপনার ইনবক্সে পাঠানো ভেরিফিকেশন লিংকে ক্লিক করে অ্যাকাউন্ট ভেরিফাই করুন।"
+                    )
+                } else {
+                    _authUiState.value = _authUiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "লগইন ব্যর্থ হয়েছে: ${err.localizedMessage ?: err.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun signUpWithEmail(email: String, pass: String, name: String) {
+        if (email.isBlank() || pass.isBlank()) {
+            _authUiState.value = _authUiState.value.copy(errorMessage = "ইমেইল এবং পাসওয়ার্ড পূরণ করুন")
+            return
+        }
+        if (pass.length < 6) {
+            _authUiState.value = _authUiState.value.copy(errorMessage = "পাসওয়ার্ড অন্তত ৬ অক্ষরের হতে হবে")
+            return
+        }
+
+        _authUiState.value = _authUiState.value.copy(isLoading = true, errorMessage = null, successMessage = null)
+        viewModelScope.launch {
+            val result = firebaseManager.signUpWithEmail(email, pass, name)
+            result.onSuccess { registeredEmail ->
+                _authUiState.value = _authUiState.value.copy(
+                    isLoading = false,
+                    currentUser = null,
+                    requiresEmailVerification = true,
+                    pendingVerificationEmail = registeredEmail,
+                    pendingVerificationPassword = pass,
+                    successMessage = "অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে! একটি ভেরিফিকেশন লিংক আপনার ইমেইলে ($registeredEmail) পাঠানো হয়েছে। লিংকে ক্লিক করার পর ভেরিফিকেশন যাচাই করে লগইন করুন।"
+                )
+            }.onFailure { err ->
+                _authUiState.value = _authUiState.value.copy(
+                    isLoading = false,
+                    errorMessage = "সাইন আপ ব্যর্থ হয়েছে: ${err.localizedMessage ?: err.message}"
+                )
+            }
+        }
+    }
+
+    fun checkEmailVerificationAndSignIn() {
+        val email = _authUiState.value.pendingVerificationEmail
+        val pass = _authUiState.value.pendingVerificationPassword
+        if (email.isBlank() || pass.isBlank()) {
+            _authUiState.value = _authUiState.value.copy(
+                requiresEmailVerification = false,
+                errorMessage = "অনুগ্রহ করে আপনার ইমেইল ও পাসওয়ার্ড দিয়ে সরাসরি লগইন করুন।"
+            )
+            return
+        }
+
+        _authUiState.value = _authUiState.value.copy(isCheckingVerification = true, errorMessage = null, successMessage = null)
+        viewModelScope.launch {
+            val result = firebaseManager.checkVerificationAndSignIn(email, pass)
+            result.onSuccess { user ->
+                _authUiState.value = _authUiState.value.copy(
+                    isCheckingVerification = false,
+                    currentUser = user,
+                    requiresEmailVerification = false,
+                    pendingVerificationEmail = "",
+                    pendingVerificationPassword = "",
+                    successMessage = "ইমেইল সফলভাবে ভেরিফাইড হয়েছে! স্বাগতম ${user.displayName ?: user.email}।"
+                )
+            }.onFailure { err ->
+                _authUiState.value = _authUiState.value.copy(
+                    isCheckingVerification = false,
+                    errorMessage = if (err is EmailNotVerifiedException)
+                        "ইমেইল এখনো ভেরিফাই করা হয়নি! অনুগ্রহ করে জিমেইল ইনবক্স/স্প্যাম চেক করে লিংকে ক্লিক করুন।"
+                    else
+                        "যাচাইকরণ ব্যর্থ হয়েছে: ${err.localizedMessage ?: err.message}"
+                )
+            }
+        }
+    }
+
+    fun resendVerificationEmail() {
+        val email = _authUiState.value.pendingVerificationEmail
+        val pass = _authUiState.value.pendingVerificationPassword
+        if (email.isBlank() || pass.isBlank()) {
+            _authUiState.value = _authUiState.value.copy(errorMessage = "পুনরায় লিংক পাঠাতে পাসওয়ার্ড প্রয়োজন। অনুগ্রহ করে আবার লগইন করার চেষ্টা করুন।")
+            return
+        }
+
+        _authUiState.value = _authUiState.value.copy(isCheckingVerification = true, errorMessage = null)
+        viewModelScope.launch {
+            val result = firebaseManager.resendVerificationEmail(email, pass)
+            result.onSuccess {
+                _authUiState.value = _authUiState.value.copy(
+                    isCheckingVerification = false,
+                    successMessage = "$email ঠিকানায় পুনরায় ভেরিফিকেশন লিংক পাঠানো হয়েছে। ইনবক্স বা স্প্যাম ফোল্ডার চেক করুন।"
+                )
+            }.onFailure { err ->
+                _authUiState.value = _authUiState.value.copy(
+                    isCheckingVerification = false,
+                    errorMessage = "ভেরিফিকেশন লিংক পাঠাতে ব্যর্থ হয়েছে: ${err.localizedMessage ?: err.message}"
+                )
+            }
+        }
+    }
+
+    fun dismissVerificationPrompt() {
+        _authUiState.value = _authUiState.value.copy(
+            requiresEmailVerification = false,
+            errorMessage = null,
+            successMessage = null
+        )
+    }
+
+    fun signInAnonymously() {
+        _authUiState.value = _authUiState.value.copy(isLoading = true, errorMessage = null, successMessage = null)
+        viewModelScope.launch {
+            val result = firebaseManager.signInAnonymously()
+            result.onSuccess { user ->
+                _authUiState.value = _authUiState.value.copy(
+                    isLoading = false,
+                    currentUser = user,
+                    requiresEmailVerification = false,
+                    successMessage = "গেস্ট হিসেবে সফলভাবে লগইন করা হয়েছে।"
+                )
+            }.onFailure { err ->
+                _authUiState.value = _authUiState.value.copy(
+                    isLoading = false,
+                    errorMessage = "গেস্ট লগইন ব্যর্থ হয়েছে: ${err.localizedMessage ?: err.message}"
+                )
+            }
+        }
+    }
+
+    fun signOut() {
+        firebaseManager.signOut()
+        _authUiState.value = _authUiState.value.copy(
+            currentUser = null,
+            requiresEmailVerification = false,
+            pendingVerificationEmail = "",
+            pendingVerificationPassword = "",
+            successMessage = "সফলভাবে লগআউট করা হয়েছে।"
+        )
+    }
+
+    fun updateFirebaseCustomProject(projectId: String, apiKey: String, appId: String) {
+        if (projectId.isBlank() || apiKey.isBlank()) {
+            _authUiState.value = _authUiState.value.copy(
+                errorMessage = "অনুগ্রহ করে Project ID এবং API Key প্রদান করুন।"
+            )
+            return
+        }
+
+        val success = firebaseManager.reinitializeWithCustomConfig(projectId, apiKey, appId)
+        if (success) {
+            _authUiState.value = _authUiState.value.copy(
+                currentUser = firebaseManager.getCurrentUser(),
+                successMessage = "ফায়ারবেস প্রজেক্ট কনফিগারেশন সফলভাবে আপডেট করা হয়েছে ($projectId)!"
+            )
+        } else {
+            _authUiState.value = _authUiState.value.copy(
+                errorMessage = "ফায়ারবেস কনফিগারেশন আপডেট করতে ব্যর্থ হয়েছে। তথ্য যাচাই করুন।"
+            )
+        }
+    }
+
+    fun getActiveFirebaseProjectId(): String = firebaseManager.getActiveProjectId()
+    fun getActiveFirebaseApiKey(): String = firebaseManager.getActiveApiKey()
+    fun getActiveFirebaseAppId(): String = firebaseManager.getActiveAppId()
+
+    fun clearAuthMessages() {
+        _authUiState.value = _authUiState.value.copy(
+            errorMessage = null,
+            successMessage = null
         )
     }
 }

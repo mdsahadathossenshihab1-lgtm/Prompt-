@@ -94,6 +94,7 @@ import coil.compose.AsyncImage
 import com.example.model.PromptConfig
 import com.example.ui.PromptFlowViewModel
 import com.example.ui.PromptUiState
+import com.example.ui.components.AiPulseLoader
 import com.example.ui.components.AppBadge
 import com.example.ui.components.FilterChipGroup
 import com.example.ui.components.OptionCheckboxItem
@@ -1241,7 +1242,13 @@ fun GeneratedPromptCard(
 
             val prompt = uiState.generatedPrompt ?: ""
 
-            if (uiState.isEditMode) {
+            if (uiState.isGenerating) {
+                AiPulseLoader(
+                    statusText = "AI মাস্টার প্রম্পট তৈরি করছে...",
+                    subtitleText = "Google Flow, Sora, Runway ও Kling অপটিমাইজেশন চলছে",
+                    size = 90.dp
+                )
+            } else if (uiState.isEditMode) {
                 // Edit Mode Text Field
                 OutlinedTextField(
                     value = uiState.editedPromptText,

@@ -12,9 +12,11 @@ class UserPreferencesManager(context: Context) {
         context.getSharedPreferences("promptflow_prefs", Context.MODE_PRIVATE)
 
     companion object {
-        const val DEFAULT_INBUILT_API_KEY = "sk-xt-94dbf742fd854824a1c886f5d008699664b3ed020abeb7b4"
-        const val DEFAULT_API_URL = "https://api.xkiro.com/v1/chat/completions"
-        const val DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash:free"
+        const val DEFAULT_INBUILT_API_KEY = "sk-F1Rka67ovnISbLz3oTYSnVDmaU5gOZGcWRi9dNN4dnvPxt2p"
+        const val DEFAULT_API_URL = "https://flushapi.fun/v1/chat/completions"
+        const val MODEL_CLAUDE_OPUS = "claude-opus-4-7"
+        const val MODEL_GPT_LUNA = "gpt-5.6-luna"
+        const val DEFAULT_MODEL = "hybrid-auto"
 
         private const val KEY_CUSTOM_API_KEY = "custom_api_key"
         private const val KEY_THEME = "app_theme"

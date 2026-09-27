@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -123,6 +124,7 @@ import com.example.model.AiModelConfig
 import com.example.model.ModelPreset
 import com.example.model.ModelPresets
 import com.example.ui.PromptFlowViewModel
+import com.example.ui.components.AiPulseLoader
 import com.example.ui.components.AppBadge
 import com.example.ui.components.SectionHeader
 import com.example.ui.theme.NeonCyan
@@ -149,6 +151,8 @@ fun ModelCreatorScreen(
     var showSaveDialog by remember { mutableStateOf(false) }
     var saveModelName by remember { mutableStateOf("") }
     var showPromptDetails by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var editInstructionText by remember { mutableStateOf("") }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -358,6 +362,8 @@ fun ModelCreatorScreen(
                                     saveModelName = modelUiState.generatedResult?.suggestedName ?: ""
                                     showSaveDialog = true
                                 },
+                                onOpenEditDialog = { showEditDialog = true },
+                                onSaveToGallery = { viewModel.saveModelToPhoneGallery() },
                                 showPromptDetails = showPromptDetails,
                                 onTogglePromptDetails = { showPromptDetails = !showPromptDetails }
                             )
@@ -386,7 +392,7 @@ fun ModelCreatorScreen(
                         }
 
                         // Generated Image Preview if available
-                        if (modelUiState.generatedResult != null || modelUiState.isGenerating) {
+                        if (modelUiState.generatedResult != null || modelUiState.isGenerating || modelUiState.isEditing) {
                             item {
                                 GeneratedModelPreviewSection(
                                     uiState = modelUiState,
@@ -402,6 +408,8 @@ fun ModelCreatorScreen(
                                         saveModelName = modelUiState.generatedResult?.suggestedName ?: ""
                                         showSaveDialog = true
                                     },
+                                    onOpenEditDialog = { showEditDialog = true },
+                                    onSaveToGallery = { viewModel.saveModelToPhoneGallery() },
                                     showPromptDetails = showPromptDetails,
                                     onTogglePromptDetails = { showPromptDetails = !showPromptDetails }
                                 )
@@ -427,10 +435,85 @@ fun ModelCreatorScreen(
                     },
                     onDeleteModel = { model ->
                         viewModel.deleteSavedModel(model)
+                    },
+                    onDownloadModel = { model ->
+                        viewModel.saveModelToPhoneGallery(model.name)
                     }
                 )
             }
         }
+    }
+
+    // Edit Model with Prompt Dialog
+    if (showEditDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Edit, contentDescription = null, tint = NeonPurple, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("ছবি এডিট করুন (Edit Model)", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        "মডেলের মূল পরিচয় এবং চেহারা অপরিবর্তিত রেখে কি পরিবর্তন করতে চান তা লিখুন (বাংলা বা ইংরেজিতে):",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = editInstructionText,
+                        onValueChange = { editInstructionText = it },
+                        label = { Text("এডিট প্রম্পট (Edit Instruction)") },
+                        placeholder = { Text("e.g. নীল রঙের শার্ট পরাও, মুখে মৃদু হাসি দাও, চোখে চশমা পরাও...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("দ্রুত পরিবর্তনের আইডিয়া:", style = MaterialTheme.typography.labelSmall)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("নীল শার্ট দাও", "মুখে হাসি দাও", "চশমা পরাও", "কালো ব্লেজার দাও", "ব্যাকগ্রাউন্ড অফিস করো", "হাতে মাইক দাও").forEach { tip ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    editInstructionText = if (editInstructionText.isBlank()) tip else "$editInstructionText, $tip"
+                                },
+                                label = { Text(tip, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (editInstructionText.isNotBlank()) {
+                            viewModel.editModelWithPrompt(editInstructionText)
+                            showEditDialog = false
+                            editInstructionText = ""
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = NeonPurple)
+                ) {
+                    Text("পরিবর্তন প্রয়োগ করুন", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditDialog = false }) {
+                    Text("বাতিল")
+                }
+            }
+        )
     }
 
     // Save Model to Library Dialog
@@ -1014,6 +1097,8 @@ fun GeneratedModelPreviewSection(
     onGenerateSimilar: () -> Unit,
     onToggleLock: () -> Unit,
     onSaveToLibrary: () -> Unit,
+    onOpenEditDialog: () -> Unit = {},
+    onSaveToGallery: () -> Unit = {},
     showPromptDetails: Boolean,
     onTogglePromptDetails: () -> Unit
 ) {
@@ -1069,19 +1154,15 @@ fun GeneratedModelPreviewSection(
                         }
                     )
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black),
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center
             ) {
-                if (uiState.isGenerating) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = NeonCyan)
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            "Generating photorealistic model...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White
-                        )
-                    }
+                if (uiState.isGenerating || uiState.isEditing) {
+                    AiPulseLoader(
+                        statusText = if (uiState.isEditing) "ছবি এআই দিয়ে এডিট করা হচ্ছে..." else "ফটোরিয়ালিস্টিক মডেল জেনারেট হচ্ছে...",
+                        subtitleText = if (uiState.isEditing) "মুখ ও ফেস স্ট্রাকচার অক্ষুণ্ণ রেখে প্রম্পট প্রয়োগ করা হচ্ছে" else "ফটোরিয়ালিস্টিক সাউথ এশিয়ান হিউম্যান মডেল তৈরি করা হচ্ছে",
+                        size = 90.dp
+                    )
                 } else if (result != null) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
@@ -1111,6 +1192,27 @@ fun GeneratedModelPreviewSection(
                                 Text("MODEL LOCKED", color = NeonGreen, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                             }
                         }
+                    }
+                }
+            }
+
+            // Edit History Badges
+            if (result != null && result.editHistory.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("এডিট হিস্ট্রি:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    result.editHistory.forEach { edit ->
+                        AppBadge(
+                            text = "✓ $edit",
+                            backgroundColor = NeonPurple.copy(alpha = 0.15f),
+                            textColor = NeonPurple
+                        )
                     }
                 }
             }
@@ -1146,6 +1248,48 @@ fun GeneratedModelPreviewSection(
                                 fontWeight = FontWeight.Black,
                                 color = Color.Black
                             )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // HIGH PRIORITY: EDIT MODEL & DIRECT DOWNLOAD ROW
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Edit Model with Prompt (ছবি এডিট করুন)
+                    Button(
+                        onClick = onOpenEditDialog,
+                        enabled = !uiState.isEditing && !uiState.isGenerating,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonPurple)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("ছবি এডিট করুন", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // Download directly to Phone Gallery (ফোনে ডাউনলোড)
+                    Button(
+                        onClick = onSaveToGallery,
+                        enabled = !uiState.isSavingToGallery,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)
+                    ) {
+                        if (uiState.isSavingToGallery) {
+                            CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Download, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("ফোনে ডাউনলোড", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1281,7 +1425,8 @@ fun ModelLibrarySection(
     savedModels: List<AiModelEntity>,
     onUseModel: (AiModelEntity) -> Unit,
     onToggleFavorite: (Long, Boolean) -> Unit,
-    onDeleteModel: (AiModelEntity) -> Unit
+    onDeleteModel: (AiModelEntity) -> Unit,
+    onDownloadModel: (AiModelEntity) -> Unit = {}
 ) {
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
@@ -1366,7 +1511,8 @@ fun ModelLibrarySection(
                         model = model,
                         onUseModel = { onUseModel(model) },
                         onToggleFavorite = { onToggleFavorite(model.id, !model.isFavorite) },
-                        onDeleteModel = { onDeleteModel(model) }
+                        onDeleteModel = { onDeleteModel(model) },
+                        onDownloadModel = { onDownloadModel(model) }
                     )
                 }
             }
@@ -1379,7 +1525,8 @@ fun ModelLibraryCard(
     model: AiModelEntity,
     onUseModel: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onDeleteModel: () -> Unit
+    onDeleteModel: () -> Unit,
+    onDownloadModel: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val formattedDate = remember(model.createdAt) {
@@ -1475,7 +1622,8 @@ fun ModelLibraryCard(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Button(
                         onClick = onUseModel,
@@ -1485,7 +1633,16 @@ fun ModelLibraryCard(
                     ) {
                         Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Use Model", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Use", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    // Direct Download to Phone Gallery Button
+                    OutlinedButton(
+                        onClick = onDownloadModel,
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = "Download to phone", modifier = Modifier.size(14.dp))
                     }
 
                     OutlinedButton(

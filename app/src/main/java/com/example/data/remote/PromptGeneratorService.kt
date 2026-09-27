@@ -19,8 +19,8 @@ class PromptGeneratorService {
     companion object {
         private const val TAG = "PromptGeneratorService"
         const val API_URL = UserPreferencesManager.DEFAULT_API_URL
-        const val MODEL_NAME = UserPreferencesManager.DEFAULT_MODEL
-        const val FALLBACK_MODEL = "qwen/qwen3.7-max:free"
+        const val MODEL_CLAUDE = UserPreferencesManager.MODEL_CLAUDE_OPUS
+        const val MODEL_GPT = UserPreferencesManager.MODEL_GPT_LUNA
 
         const val SYSTEM_PROMPT = """You are an expert AI Video Prompt Engineer.
 
@@ -230,6 +230,18 @@ Do not discuss how the prompt was created."""
         }
     }
 
+    private val callCounter = java.util.concurrent.atomic.AtomicInteger(0)
+
+    private fun getOrderedModels(): Pair<String, String> {
+        val count = callCounter.getAndIncrement()
+        // Alternate dynamically between Claude Opus 4.7 and GPT-5.6 Luna
+        return if (count % 2 == 0) {
+            Pair(MODEL_CLAUDE, MODEL_GPT)
+        } else {
+            Pair(MODEL_GPT, MODEL_CLAUDE)
+        }
+    }
+
     suspend fun generateMasterPrompt(
         config: PromptConfig,
         apiKey: String
@@ -241,22 +253,26 @@ Do not discuss how the prompt was created."""
         val effectiveApiKey = apiKey.ifBlank { UserPreferencesManager.DEFAULT_INBUILT_API_KEY }
         val userPrompt = buildUserPrompt(config)
 
-        // Try primary model (DeepSeek v4.1 Flash)
-        val primaryResult = invokeApi(MODEL_NAME, userPrompt, effectiveApiKey)
+        // Dynamic balanced selection: Claude Opus 4.7 & GPT-5.6 Luna
+        val (primaryModel, secondaryModel) = getOrderedModels()
+
+        Log.d(TAG, "Attempting FlushAPI prompt generation with primary model: $primaryModel")
+        val primaryResult = invokeApi(primaryModel, userPrompt, effectiveApiKey)
         if (primaryResult.isSuccess) {
             return@withContext primaryResult
         }
 
         val primaryError = primaryResult.exceptionOrNull()
-        Log.w(TAG, "Primary model ($MODEL_NAME) failed: ${primaryError?.message}. Attempting fallback model ($FALLBACK_MODEL)...")
+        Log.w(TAG, "Primary model ($primaryModel) failed: ${primaryError?.message}. Alternating to secondary model ($secondaryModel)...")
 
-        // Try fallback model (Qwen 3.7 Max Free)
-        val fallbackResult = invokeApi(FALLBACK_MODEL, userPrompt, effectiveApiKey)
-        if (fallbackResult.isSuccess) {
-            return@withContext fallbackResult
+        // Alternate to secondary model
+        val secondaryResult = invokeApi(secondaryModel, userPrompt, effectiveApiKey)
+        if (secondaryResult.isSuccess) {
+            return@withContext secondaryResult
         }
 
-        Log.w(TAG, "Both cloud models failed. Synthesizing high-fidelity local master prompt.")
+        val secondaryError = secondaryResult.exceptionOrNull()
+        Log.w(TAG, "Both cloud models ($primaryModel and $secondaryModel) failed (${secondaryError?.message}). Synthesizing high-fidelity local master prompt.")
         val synthesized = generateHighFidelityLocalPrompt(config)
         Result.success(synthesized)
     }
@@ -301,6 +317,13 @@ Do not discuss how the prompt was created."""
                 }
 
                 val jsonResponse = JSONObject(responseBody)
+
+                if (jsonResponse.has("error")) {
+                    val errorObj = jsonResponse.optJSONObject("error")
+                    val errorMsg = errorObj?.optString("message") ?: "Unknown error"
+                    return Result.failure(IOException("FlushAPI Error: $errorMsg"))
+                }
+
                 val choices = jsonResponse.optJSONArray("choices")
                 if (choices == null || choices.length() == 0) {
                     return Result.failure(IOException("No completion returned by AI model."))
@@ -324,19 +347,20 @@ Do not discuss how the prompt was created."""
     suspend fun testConnection(apiKey: String): Result<String> = withContext(Dispatchers.IO) {
         val effectiveKey = apiKey.ifBlank { UserPreferencesManager.DEFAULT_INBUILT_API_KEY }
         try {
-            // First test primary model
-            val primaryTest = testSingleModel(MODEL_NAME, effectiveKey)
-            if (primaryTest.isSuccess) {
-                return@withContext Result.success("Connected to XKIRO AI! Active model: $MODEL_NAME")
+            // Test GPT-5.6 Luna
+            val gptTest = testSingleModel(MODEL_GPT, effectiveKey)
+            if (gptTest.isSuccess) {
+                return@withContext Result.success("Connected to FlushAPI! Active model: $MODEL_GPT & $MODEL_CLAUDE")
             }
 
-            // Test fallback model
-            val fallbackTest = testSingleModel(FALLBACK_MODEL, effectiveKey)
-            if (fallbackTest.isSuccess) {
-                return@withContext Result.success("Connected to XKIRO AI! Active free model: $FALLBACK_MODEL (DeepSeek v4.1 will activate automatically when wallet is topped up).")
+            // Test Claude Opus
+            val claudeTest = testSingleModel(MODEL_CLAUDE, effectiveKey)
+            if (claudeTest.isSuccess) {
+                return@withContext Result.success("Connected to FlushAPI! Active model: $MODEL_CLAUDE & $MODEL_GPT")
             }
 
-            Result.failure(IOException(fallbackTest.exceptionOrNull()?.message ?: "Failed to connect to XKIRO API."))
+            val errMsg = gptTest.exceptionOrNull()?.message ?: claudeTest.exceptionOrNull()?.message ?: "Connection test failed"
+            Result.failure(IOException(errMsg))
         } catch (e: Exception) {
             Result.failure(e)
         }
