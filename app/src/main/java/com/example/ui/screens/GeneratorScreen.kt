@@ -902,21 +902,34 @@ fun VisualSettingsCard(
                         }
                     )
 
-                    // B-Roll
-                    Text(
-                        text = "B-Roll Cutaways",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    // B-Roll Cutaways (Visual Cutouts)
+                    Column {
+                        Text(
+                            text = "B-Roll Cutaways (ভিজ্যুয়াল কাটআউটস)",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "ভিডিও চলাকালীন বক্তব্যের সাথে প্রাসঙ্গিক দৃশ্য ও কাটআউট সিন যুক্ত করুন",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
+                    }
                     FilterChipGroup(
-                        items = listOf("Auto (Synced)", "Yes", "No"),
+                        items = listOf("Yes (কাটআউটস সহ)", "Auto (অটো সিন)", "No (শুধুমাত্র স্পিকার)"),
                         selectedItem = when (config.bRoll) {
-                            "Yes" -> "Yes"
-                            "No" -> "No"
-                            else -> "Auto (Synced)"
+                            "Yes" -> "Yes (কাটআউটস সহ)"
+                            "No" -> "No (শুধুমাত্র স্পিকার)"
+                            else -> "Auto (অটো সিন)"
                         },
                         onItemSelected = {
-                            viewModel.updateBRoll(if (it.startsWith("Auto")) "Auto" else it)
+                            val selected = when {
+                                it.startsWith("Yes") -> "Yes"
+                                it.startsWith("No") -> "No"
+                                else -> "Auto"
+                            }
+                            viewModel.updateBRoll(selected)
                         }
                     )
 

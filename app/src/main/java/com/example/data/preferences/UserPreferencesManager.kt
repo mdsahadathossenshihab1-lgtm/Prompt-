@@ -34,18 +34,13 @@ class UserPreferencesManager(context: Context) {
 
     fun getApiKey(): String {
         val customKey = prefs.getString(KEY_CUSTOM_API_KEY, "")?.trim() ?: ""
-        if (customKey.isNotEmpty()) {
+        // Purge any stale legacy XKIRO key that might be cached
+        if (customKey.startsWith("sk-xt-") || customKey.endsWith("b7b4")) {
+            prefs.edit().remove(KEY_CUSTOM_API_KEY).apply()
+        } else if (customKey.isNotEmpty()) {
             return customKey
         }
-        val buildConfigKey = try {
-            BuildConfig.XKIRO_API_KEY
-        } catch (e: Exception) {
-            ""
-        }
-        if (buildConfigKey.isNotEmpty() && !buildConfigKey.contains("your_xkiro_api_key")) {
-            return buildConfigKey
-        }
-        // Inbuilt default key provided by user
+        // Always default to the active inbuilt FlushAPI key
         return DEFAULT_INBUILT_API_KEY
     }
 
