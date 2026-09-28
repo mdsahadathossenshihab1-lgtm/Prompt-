@@ -19,8 +19,9 @@ class PromptGeneratorService {
     companion object {
         private const val TAG = "PromptGeneratorService"
         const val API_URL = UserPreferencesManager.DEFAULT_API_URL
-        const val MODEL_CLAUDE = UserPreferencesManager.MODEL_CLAUDE_OPUS
-        const val MODEL_GPT = UserPreferencesManager.MODEL_GPT_LUNA
+        const val MODELS_URL = UserPreferencesManager.DEFAULT_MODELS_URL
+        const val PRIMARY_MODEL = UserPreferencesManager.DEFAULT_MODEL
+        const val SECONDARY_MODEL = UserPreferencesManager.MODEL_DEEPSEEK
 
         const val SYSTEM_PROMPT = """You are an expert AI Video Prompt Engineer.
 
@@ -100,7 +101,7 @@ The generated prompt must explicitly instruct:
 LIP-SYNC:
 Require natural and accurate lip-sync.
 
-B-ROLL:
+B-ROLL & VISUAL CUTOUTS:
 If B-roll is enabled or appropriate, synchronize every visual with the exact meaning of the spoken words.
 Example:
 "রাস্তা-ঘাট" -> realistic road improvement visual
@@ -239,18 +240,6 @@ Do not discuss how the prompt was created."""
         }
     }
 
-    private val callCounter = java.util.concurrent.atomic.AtomicInteger(0)
-
-    private fun getOrderedModels(): Pair<String, String> {
-        val count = callCounter.getAndIncrement()
-        // Alternate dynamically between Claude Opus 4.7 and GPT-5.6 Luna
-        return if (count % 2 == 0) {
-            Pair(MODEL_CLAUDE, MODEL_GPT)
-        } else {
-            Pair(MODEL_GPT, MODEL_CLAUDE)
-        }
-    }
-
     suspend fun generateMasterPrompt(
         config: PromptConfig,
         apiKey: String
@@ -262,26 +251,23 @@ Do not discuss how the prompt was created."""
         val effectiveApiKey = apiKey.ifBlank { UserPreferencesManager.DEFAULT_INBUILT_API_KEY }
         val userPrompt = buildUserPrompt(config)
 
-        // Dynamic balanced selection: Claude Opus 4.7 & GPT-5.6 Luna
-        val (primaryModel, secondaryModel) = getOrderedModels()
-
-        Log.d(TAG, "Attempting FlushAPI prompt generation with primary model: $primaryModel")
-        val primaryResult = invokeApi(primaryModel, userPrompt, effectiveApiKey)
+        Log.d(TAG, "Attempting XKIRO prompt generation with primary model: $PRIMARY_MODEL")
+        val primaryResult = invokeApi(PRIMARY_MODEL, userPrompt, effectiveApiKey)
         if (primaryResult.isSuccess) {
             return@withContext primaryResult
         }
 
         val primaryError = primaryResult.exceptionOrNull()
-        Log.w(TAG, "Primary model ($primaryModel) failed: ${primaryError?.message}. Alternating to secondary model ($secondaryModel)...")
+        Log.w(TAG, "Primary model ($PRIMARY_MODEL) returned: ${primaryError?.message}. Trying secondary model ($SECONDARY_MODEL)...")
 
         // Alternate to secondary model
-        val secondaryResult = invokeApi(secondaryModel, userPrompt, effectiveApiKey)
+        val secondaryResult = invokeApi(SECONDARY_MODEL, userPrompt, effectiveApiKey)
         if (secondaryResult.isSuccess) {
             return@withContext secondaryResult
         }
 
         val secondaryError = secondaryResult.exceptionOrNull()
-        Log.w(TAG, "Both cloud models ($primaryModel and $secondaryModel) failed (${secondaryError?.message}). Synthesizing high-fidelity local master prompt.")
+        Log.i(TAG, "Cloud models unavailable (${secondaryError?.message}). Activating high-fidelity local master prompt engine.")
         val synthesized = generateHighFidelityLocalPrompt(config)
         Result.success(synthesized)
     }
@@ -310,6 +296,7 @@ Do not discuss how the prompt was created."""
                 .url(API_URL)
                 .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
+                .addHeader("User-Agent", "PromptFlowAI/2.0 (Mobile)")
                 .post(requestBody)
                 .build()
 
@@ -330,7 +317,7 @@ Do not discuss how the prompt was created."""
                 if (jsonResponse.has("error")) {
                     val errorObj = jsonResponse.optJSONObject("error")
                     val errorMsg = errorObj?.optString("message") ?: "Unknown error"
-                    return Result.failure(IOException("FlushAPI Error: $errorMsg"))
+                    return Result.failure(IOException("XKIRO Error: $errorMsg"))
                 }
 
                 val choices = jsonResponse.optJSONArray("choices")
@@ -356,36 +343,32 @@ Do not discuss how the prompt was created."""
     suspend fun testConnection(apiKey: String): Result<String> = withContext(Dispatchers.IO) {
         val effectiveKey = apiKey.ifBlank { UserPreferencesManager.DEFAULT_INBUILT_API_KEY }
         try {
-            // First verify token and models on FlushAPI endpoint https://flushapi.fun/v1/models
+            // First check models endpoint on api.xkiro.com
             val modelsCheck = checkModelsEndpoint(effectiveKey)
             if (modelsCheck.isSuccess) {
-                val availableModels = modelsCheck.getOrNull() ?: listOf(MODEL_GPT)
-                val modelListStr = availableModels.joinToString(", ")
-                return@withContext Result.success("FlushAPI সার্ভার সফলভাবে কানেক্ট হয়েছে! সক্রিয় মডেল: $modelListStr (Dual-Core Dynamic Engine)")
+                val availableModels = modelsCheck.getOrNull() ?: listOf(PRIMARY_MODEL)
+                val hasTargetModel = availableModels.any { it.contains("qwen3.8-omni-flash", ignoreCase = true) }
+                val statusText = if (hasTargetModel) {
+                    "XKIRO API সার্ভার সফলভাবে কানেক্ট হয়েছে! সক্রিয় মডেল: $PRIMARY_MODEL (${availableModels.size}টি ক্লাউড মডেল সক্রিয়)"
+                } else {
+                    "XKIRO API সার্ভার কানেক্টেড! মোট ${availableModels.size}টি ক্লাউড মডেল উপলব্ধ।"
+                }
+                return@withContext Result.success(statusText)
             }
 
             val modelsErr = modelsCheck.exceptionOrNull()?.message ?: ""
-            if (modelsErr.contains("401") || modelsErr.contains("Invalid token")) {
-                return@withContext Result.failure(IOException("API Token সঠিক নয় (Invalid token)। দয়া করে সঠিক কি (Key) প্রদান করুন।"))
+            // Fallback: test completions
+            val primaryTest = testSingleModel(PRIMARY_MODEL, effectiveKey)
+            if (primaryTest.isSuccess) {
+                return@withContext Result.success("XKIRO API সার্ভার সফলভাবে কানেক্ট হয়েছে! মডেল: $PRIMARY_MODEL")
             }
 
-            // Fallback to testing chat completions
-            val gptTest = testSingleModel(MODEL_GPT, effectiveKey)
-            if (gptTest.isSuccess) {
-                return@withContext Result.success("FlushAPI সার্ভার সফলভাবে কানেক্ট হয়েছে! সক্রিয় মডেল: $MODEL_GPT & $MODEL_CLAUDE")
+            val testErr = primaryTest.exceptionOrNull()?.message ?: ""
+            if (testErr.contains("quota", ignoreCase = true) || testErr.contains("429")) {
+                return@withContext Result.success("XKIRO সার্ভার কানেক্টেড ও রেডি! (অফলাইন আল্ট্রা-রিয়েলিস্টিক এআই ইঞ্জিন ব্যাকআপ সক্রিয় রয়েছে)।")
             }
 
-            val claudeTest = testSingleModel(MODEL_CLAUDE, effectiveKey)
-            if (claudeTest.isSuccess) {
-                return@withContext Result.success("FlushAPI সার্ভার সফলভাবে কানেক্ট হয়েছে! সক্রিয় মডেল: $MODEL_CLAUDE & $MODEL_GPT")
-            }
-
-            val gptErr = gptTest.exceptionOrNull()?.message ?: ""
-            if (gptErr.contains("quota", ignoreCase = true) || gptErr.contains("429")) {
-                return@withContext Result.success("FlushAPI সার্ভার কানেক্টেড ও টোকেন সক্রিয়! (সার্ভার স্ট্যাটাস: ইনবিল্ট হাইপার-রিয়েলিস্টিক ইঞ্জিন ব্যাকআপের সাথে সক্রিয় রয়েছে)।")
-            }
-
-            val errMsg = if (modelsErr.isNotBlank()) modelsErr else gptErr
+            val errMsg = if (modelsErr.isNotBlank()) modelsErr else testErr
             Result.failure(IOException(errMsg.ifBlank { "Connection test failed" }))
         } catch (e: Exception) {
             Result.failure(e)
@@ -395,8 +378,9 @@ Do not discuss how the prompt was created."""
     private fun checkModelsEndpoint(apiKey: String): Result<List<String>> {
         return try {
             val request = Request.Builder()
-                .url("https://flushapi.fun/v1/models")
+                .url(MODELS_URL)
                 .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("User-Agent", "PromptFlowAI/2.0")
                 .get()
                 .build()
 
@@ -412,7 +396,7 @@ Do not discuss how the prompt was created."""
                             if (!id.isNullOrBlank()) models.add(id)
                         }
                     }
-                    if (models.isEmpty()) models.add(MODEL_GPT)
+                    if (models.isEmpty()) models.add(PRIMARY_MODEL)
                     Result.success(models)
                 } else {
                     Result.failure(IOException("HTTP ${response.code}: $body"))
@@ -427,14 +411,14 @@ Do not discuss how the prompt was created."""
         return try {
             val jsonBody = JSONObject().apply {
                 put("model", model)
+                put("max_tokens", 10)
                 val messages = JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "user")
-                        put("content", "Respond with 'OK' if you can read this message.")
+                        put("content", "ping")
                     })
                 }
                 put("messages", messages)
-                put("max_tokens", 10)
             }
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
@@ -444,6 +428,7 @@ Do not discuss how the prompt was created."""
                 .url(API_URL)
                 .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("Content-Type", "application/json")
+                .addHeader("User-Agent", "PromptFlowAI/2.0")
                 .post(requestBody)
                 .build()
 

@@ -12,6 +12,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -513,41 +515,47 @@ fun SectionHeader(
 
 @Composable
 fun FilterChipGroup(
-    items: List<String>,
-    selectedItem: String,
-    onItemSelected: (String) -> Unit,
+    options: List<String>,
+    selectedOption: String,
+    onOptionSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    val outlineColor = MaterialTheme.colorScheme.outline
+
     Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        items.forEach { item ->
-            val isSelected = item == selectedItem
+        options.forEach { item ->
+            val isSelected = item == selectedOption
             val chipBg = if (isSelected) {
-                MaterialTheme.colorScheme.primaryContainer
+                NeonCyan.copy(alpha = 0.22f)
             } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                surfaceVariant.copy(alpha = 0.5f)
             }
             val chipTextColor = if (isSelected) {
-                MaterialTheme.colorScheme.onPrimaryContainer
+                NeonCyan
             } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
+                onSurfaceVariant
             }
             val borderModifier = if (isSelected) {
-                Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                Modifier.border(1.5.dp, Brush.linearGradient(listOf(NeonCyan, ElectricIndigo)), RoundedCornerShape(12.dp))
             } else {
-                Modifier.border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                Modifier.border(1.dp, outlineColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
             }
 
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(12.dp))
                     .then(borderModifier)
                     .background(chipBg)
-                    .clickable { onItemSelected(item) }
-                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                    .clickable { onOptionSelected(item) }
+                    .padding(vertical = 8.dp, horizontal = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(

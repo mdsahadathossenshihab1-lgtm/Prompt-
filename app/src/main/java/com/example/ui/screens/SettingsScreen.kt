@@ -118,7 +118,7 @@ fun SettingsScreen(
             ) {
                 SectionHeader(
                     title = "Inbuilt AI Video Engine",
-                    subtitle = "FlushAPI • Claude Opus 4.7 & GPT-5.6 Luna (Dual-Core Engine)",
+                    subtitle = "XKIRO Cloud • Qwen 3.8 Omni Flash (High-Speed Engine)",
                     icon = Icons.Default.Speed
                 )
 
@@ -133,7 +133,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     AppBadge(
-                        text = "claude-opus-4-7 & gpt-5.6-luna",
+                        text = "qwen/qwen3.8-omni-flash:free",
                         backgroundColor = MaterialTheme.colorScheme.primaryContainer,
                         textColor = MaterialTheme.colorScheme.onPrimaryContainer
                     )
@@ -150,7 +150,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "https://flushapi.fun/v1",
+                        text = "https://api.xkiro.com/v1",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -239,7 +239,7 @@ fun SettingsScreen(
                         OutlinedTextField(
                             value = customKeyInput,
                             onValueChange = { customKeyInput = it },
-                            label = { Text("Override with Custom FlushAPI Key") },
+                            label = { Text("Custom XKIRO API Key (or override)") },
                             placeholder = { Text("sk-...") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()

@@ -2,7 +2,6 @@ package com.example.data.preferences
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.example.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,13 +11,17 @@ class UserPreferencesManager(context: Context) {
         context.getSharedPreferences("promptflow_prefs", Context.MODE_PRIVATE)
 
     companion object {
-        const val DEFAULT_INBUILT_API_KEY = "sk-F1Rka67ovnISbLz3oTYSnVDmaU5gOZGcWRi9dNN4dnvPxt2p"
-        const val DEFAULT_API_URL = "https://flushapi.fun/v1/chat/completions"
-        const val MODEL_CLAUDE_OPUS = "claude-opus-4-7"
-        const val MODEL_GPT_LUNA = "gpt-5.6-luna"
-        const val DEFAULT_MODEL = "hybrid-auto"
+        // Updated to user-requested XKIRO endpoint & credentials
+        const val DEFAULT_INBUILT_API_KEY = "sk-XgS487HaNFYaGv3hGtiQGSUBZN1M8PlQP4CWNiVQ5U5jRBiM"
+        const val DEFAULT_API_URL = "https://api.xkiro.com/v1/chat/completions"
+        const val DEFAULT_MODELS_URL = "https://api.xkiro.com/v1/models"
+        const val DEFAULT_MODEL = "qwen/qwen3.8-omni-flash:free"
+        const val MODEL_DEEPSEEK = "deepseek/deepseek-v3.2"
+        const val MODEL_MINIMAX = "minimax/minimax-m3:free"
+        const val MODEL_QWEN_MAX = "qwen/qwen3.7-max:free"
 
         private const val KEY_CUSTOM_API_KEY = "custom_api_key"
+        private const val KEY_SELECTED_MODEL = "selected_model"
         private const val KEY_THEME = "app_theme"
         private const val KEY_DEFAULT_ASPECT_RATIO = "default_aspect_ratio"
         private const val KEY_DEFAULT_DURATION = "default_duration"
@@ -32,15 +35,19 @@ class UserPreferencesManager(context: Context) {
     private val _themeFlow = MutableStateFlow(getTheme())
     val themeFlow: StateFlow<String> = _themeFlow.asStateFlow()
 
+    init {
+        // Clear any old obsolete keys from previous servers (e.g. FlushAPI or old XKIRO keys)
+        val storedKey = prefs.getString(KEY_CUSTOM_API_KEY, "")?.trim() ?: ""
+        if (storedKey.contains("Flush") || storedKey.contains("F1Rka67") || storedKey.endsWith("b7b4")) {
+            prefs.edit().remove(KEY_CUSTOM_API_KEY).apply()
+        }
+    }
+
     fun getApiKey(): String {
         val customKey = prefs.getString(KEY_CUSTOM_API_KEY, "")?.trim() ?: ""
-        // Purge any stale legacy XKIRO key that might be cached
-        if (customKey.startsWith("sk-xt-") || customKey.endsWith("b7b4")) {
-            prefs.edit().remove(KEY_CUSTOM_API_KEY).apply()
-        } else if (customKey.isNotEmpty()) {
+        if (customKey.isNotEmpty()) {
             return customKey
         }
-        // Always default to the active inbuilt FlushAPI key
         return DEFAULT_INBUILT_API_KEY
     }
 
@@ -61,6 +68,14 @@ class UserPreferencesManager(context: Context) {
 
     fun clearCustomApiKey() {
         prefs.edit().remove(KEY_CUSTOM_API_KEY).apply()
+    }
+
+    fun getSelectedModel(): String {
+        return prefs.getString(KEY_SELECTED_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
+    }
+
+    fun setSelectedModel(model: String) {
+        prefs.edit().putString(KEY_SELECTED_MODEL, model).apply()
     }
 
     // Firebase preferences
