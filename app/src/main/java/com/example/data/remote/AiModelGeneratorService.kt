@@ -584,4 +584,124 @@ class AiModelGeneratorService(private val context: Context) {
         bitmap.recycle()
         return file.absolutePath
     }
+
+    fun buildCharacterPromptFromScript(
+        voiceScript: String,
+        gender: String,
+        config: AiModelConfig,
+        seed: Long
+    ): String {
+        val cleanScript = voiceScript.trim()
+        val isBengali = cleanScript.any { it in '\u0980'..'\u09FF' } ||
+                cleanScript.contains("bangla", ignoreCase = true) ||
+                cleanScript.contains("বাংলাদেশ", ignoreCase = true)
+
+        val ethnicityStr = if (isBengali) {
+            "Authentic South Asian Bangladeshi ethnicity, natural warm olive-brown skin tone, realistic facial structure, expressive dark brown eyes, naturally styled deep black hair"
+        } else {
+            "Charismatic, relatable professional model, authentic natural skin tones, clear captivating eyes"
+        }
+
+        val ageStr = when {
+            config.ageRange.isNotBlank() && config.ageRange != "25-35" -> config.ageRange
+            cleanScript.contains("তরুণ", ignoreCase = true) || cleanScript.contains("স্টুডেন্ট", ignoreCase = true) -> "24-28 years old (Young Dynamic Professional)"
+            cleanScript.contains("অভিজ্ঞ", ignoreCase = true) || cleanScript.contains("দেশ", ignoreCase = true) -> "32-38 years old (Credible & Authoritative)"
+            else -> "28-35 years old"
+        }
+
+        // Infer wardrobe from voice script context
+        val wardrobe = when {
+            cleanScript.contains("স্মার্টফোন", ignoreCase = true) || cleanScript.contains("প্রোডাক্ট", ignoreCase = true) || cleanScript.contains("অফার", ignoreCase = true) ->
+                if (gender == "Female") "Modern smart-casual pastel blazer over white minimalist top, tasteful subtle jewelry"
+                else "Tailored slim-fit dark navy blazer over crisp white shirt, open collar, smart contemporary style"
+            cleanScript.contains("এআই", ignoreCase = true) || cleanScript.contains("টেক", ignoreCase = true) || cleanScript.contains("ডিজিটাল", ignoreCase = true) ->
+                if (gender == "Female") "Sleek contemporary executive tech attire, graphite gray blazer, stylish glasses, neat hair"
+                else "Modern tech professional charcoal blazer over premium matte crewneck, sophisticated minimalist aesthetic"
+            cleanScript.contains("সফলতা", ignoreCase = true) || cleanScript.contains("মোটিভেশনাল", ignoreCase = true) || cleanScript.contains("পরিশ্রম", ignoreCase = true) ->
+                if (gender == "Female") "Empowering sharp business attire, confidence-inspiring tailored formal suit"
+                else "Inspiring sharp dark formal suit, crisp tailored finish, authoritative executive posture"
+            else ->
+                if (gender == "Female") "Tasteful elegant contemporary formal attire, camera-ready styling"
+                else "Clean modern tailored professional attire, sharp pressed collar"
+        }
+
+        val expression = when {
+            cleanScript.contains("অফার", ignoreCase = true) || cleanScript.contains("স্বাগতম", ignoreCase = true) ->
+                "Warm, enthusiastic, engaging smile, communicative open micro-expressions, mouth poised naturally as if speaking the first syllables"
+            cleanScript.contains("গুরুত্বপূর্ণ", ignoreCase = true) || cleanScript.contains("সতর্ক", ignoreCase = true) ->
+                "Serious, authoritative, trustworthy eye contact, grounded focused facial expression"
+            else ->
+                "Charismatic, natural engaging smile, articulate presenter poise, direct eye contact with lens"
+        }
+
+        return buildString {
+            appendLine("=== MASTER AI CHARACTER & ACTOR PROMPT ===")
+            appendLine("Optimized for Midjourney v6.1, Flux.1, Kling, Sora & Runway Gen-3")
+            appendLine()
+            appendLine("1. CHARACTER IDENTITY & ARCHETYPE:")
+            appendLine("   - Gender: $gender Presenter")
+            appendLine("   - Age Bracket: $ageStr")
+            appendLine("   - Demographic & Heritage: $ethnicityStr")
+            appendLine("   - Persona Aligned to Script: Presenter specifically cast to articulate: \"${cleanScript.take(90)}...\"")
+            appendLine()
+            appendLine("2. FACIAL GEOMETRY & ANATOMICAL REALISM:")
+            appendLine("   - Skin Texture: Ultra-detailed authentic human skin, visible delicate micro-pores, natural epidermal subsurface scattering, realistic catchlight reflections in iris, zero artificial airbrushing, zero plastic wax finish")
+            appendLine("   - Hair & Grooming: ${if (gender == "Male") "Neatly styled natural dark hair with subtle organic movement, trimmed beard or sharp clean shave" else "Elegantly styled lustrous dark hair with natural volume and realistic flyaway strands"}")
+            appendLine("   - Eyes & Expression: $expression")
+            appendLine()
+            appendLine("3. WARDROBE & PROFESSIONAL STYLING:")
+            appendLine("   - Costume: $wardrobe")
+            appendLine("   - Textile Details: Ultra-fine fabric weave texture, realistic natural seams and drape, photorealistic cotton/wool tactile depth")
+            appendLine("   - Accessories: Discreet miniature black lavalier microphone pinned to upper collar")
+            appendLine()
+            appendLine("4. CINEMATOGRAPHY, LENS & LIGHTING:")
+            appendLine("   - Camera & Optics: Shot on ARRI Alexa Mini LF, Cooke Anamorphic /i Full Frame Plus 85mm T2.3 Prime Lens")
+            appendLine("   - Depth of Field: Shallow depth of field (f/1.8), creamy buttery bokeh background separation, razor-sharp focus on subject eyes and mouth")
+            appendLine("   - Lighting Setup: 3-point cinematic commercial portrait lighting, large softbox key light at 45 degrees, gentle fill light, subtle golden rim/hair light highlighting shoulders")
+            appendLine("   - Color Science: Natural broadcast color palette, realistic skin tones, calibrated neutral white balance")
+            appendLine()
+            appendLine("5. CONSISTENCY & CONTINUITY ANCHOR:")
+            appendLine("   - Character Seed Identifier: #$seed")
+            appendLine("   - Identity Lock Rule: Lock identical facial bone structure, nose shape, jawline, eye spacing, and ear proportions across all subsequent scene generations")
+            appendLine()
+            appendLine("6. READY-TO-PASTE MIDJOURNEY / FLUX PROMPT:")
+            append("   RAW photograph, 8k resolution, editorial portrait of a $gender $ethnicityStr, $ageStr, wearing $wardrobe, $expression, cinematic volumetric 3-point studio lighting, shot on 85mm f/1.8 lens, shallow depth of field, photorealistic skin pores, realistic textile folds, ultra-detailed --ar 9:16 --v 6.1 --style raw --seed $seed")
+            appendLine()
+            appendLine()
+            appendLine("7. NEGATIVE PROMPT CONSTRAINTS:")
+            appendLine("   NO extra fingers, NO deformed hands, NO asymmetrical eyes, NO wax skin, NO plastic shine, NO cartoon aesthetic, NO 3D render, NO illustration, NO watermark, NO logo, NO blurry face, NO over-sharpened artifacts.")
+        }
+    }
+
+    suspend fun generateCharacterPromptFromScript(
+        voiceScript: String,
+        gender: String,
+        config: AiModelConfig
+    ): Result<GeneratedModelResult> = withContext(Dispatchers.IO) {
+        try {
+            val seed = Random.nextLong(100000000L, 999999999L)
+            val updatedCfg = config.copy(
+                gender = gender,
+                description = voiceScript
+            )
+            val detailedPrompt = buildCharacterPromptFromScript(voiceScript, gender, updatedCfg, seed)
+            val suggestedName = when (gender) {
+                "Female" -> "Female Presenter (${if (voiceScript.any { it in '\u0980'..'\u09FF' }) "বাঙালি" else "Global"})"
+                else -> "Male Presenter (${if (voiceScript.any { it in '\u0980'..'\u09FF' }) "বাঙালি" else "Global"})"
+            }
+
+            Result.success(
+                GeneratedModelResult(
+                    imageUrl = "", // NO picture generated as explicitly requested!
+                    localFilePath = null,
+                    detailedPrompt = detailedPrompt,
+                    seed = seed,
+                    suggestedName = suggestedName,
+                    editHistory = emptyList()
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

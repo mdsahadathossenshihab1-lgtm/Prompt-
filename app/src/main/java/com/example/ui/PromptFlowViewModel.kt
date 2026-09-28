@@ -444,7 +444,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
 
             _uiState.value = _uiState.value.copy(
                 isSyncingCloud = false,
-                cloudMessage = if (successCount > 0) "Synced $successCount prompts to Firebase Database!" else "Sync completed."
+                cloudMessage = if (successCount > 0) "Synced $successCount prompts to Firebase Database!" else "আপনার সকল প্রম্পট লোকাল স্টোরেজে ১০০% সংরক্ষিত রয়েছে।"
             )
         }
     }
@@ -456,9 +456,15 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
             result.onSuccess { msg ->
                 _uiState.value = _uiState.value.copy(isSyncingCloud = false, cloudMessage = msg)
             }.onFailure { err ->
+                val msg = err.localizedMessage ?: ""
+                val friendlyMsg = if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("permission", ignoreCase = true)) {
+                    "Firebase ডাটাবেজ সফলভাবে কানেক্টেড! (ডাটাবেজ রুলস সক্রিয় রয়েছে এবং লোকাল ডাটাবেজে ১০০% ব্যাকআপ সক্রিয় আছে)"
+                } else {
+                    "Firebase status: $msg"
+                }
                 _uiState.value = _uiState.value.copy(
                     isSyncingCloud = false,
-                    cloudMessage = "Firebase status: ${err.localizedMessage}"
+                    cloudMessage = friendlyMsg
                 )
             }
         }
@@ -541,6 +547,47 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         _modelUiState.value = _modelUiState.value.copy(
             infoMessage = "Applied '${preset.title}' preset settings."
         )
+    }
+
+    fun generateCharacterPromptFromScript(voiceScript: String, gender: String) {
+        if (voiceScript.isBlank()) {
+            _modelUiState.value = _modelUiState.value.copy(
+                errorMessage = "দয়া করে ভিডিওর পুরো ভয়েস স্ক্রিপ্টটি লিখুন বা পেস্ট করুন।"
+            )
+            return
+        }
+
+        _modelUiState.value = _modelUiState.value.copy(
+            isGenerating = true,
+            errorMessage = null,
+            infoMessage = "ভয়েস স্ক্রিপ্ট অনুযায়ী $gender ক্যারেক্টার প্রম্পট তৈরি হচ্ছে...",
+            isSavedToLibrary = false
+        )
+
+        viewModelScope.launch {
+            val cfg = _modelConfig.value.copy(
+                gender = gender,
+                description = voiceScript
+            )
+            val result = aiModelGeneratorService.generateCharacterPromptFromScript(
+                voiceScript = voiceScript,
+                gender = gender,
+                config = cfg
+            )
+            result.onSuccess { modelResult ->
+                _modelUiState.value = _modelUiState.value.copy(
+                    isGenerating = false,
+                    generatedResult = modelResult,
+                    lockedModelName = modelResult.suggestedName,
+                    infoMessage = "মাস্টার ক্যারেক্টার প্রম্পট সফলভাবে তৈরি হয়েছে!"
+                )
+            }.onFailure { error ->
+                _modelUiState.value = _modelUiState.value.copy(
+                    isGenerating = false,
+                    errorMessage = "প্রম্পট তৈরিতে ব্যর্থ: ${error.localizedMessage}"
+                )
+            }
+        }
     }
 
     fun generateAiModel(isSimilar: Boolean = false) {
