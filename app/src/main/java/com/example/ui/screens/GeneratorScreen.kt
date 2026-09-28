@@ -126,6 +126,7 @@ import java.io.FileOutputStream
 fun GeneratorScreen(
     viewModel: PromptFlowViewModel,
     onNavigateToModelCreator: () -> Unit = {},
+    onNavigateToAgentMode: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val config by viewModel.config.collectAsState()
@@ -195,7 +196,8 @@ fun GeneratorScreen(
                         uiState = uiState,
                         viewModel = viewModel,
                         context = context,
-                        onNavigateToModelCreator = onNavigateToModelCreator
+                        onNavigateToModelCreator = onNavigateToModelCreator,
+                        onNavigateToAgentMode = onNavigateToAgentMode
                     )
                     Spacer(modifier = Modifier.height(32.dp))
                 }
@@ -308,7 +310,8 @@ fun GeneratorScreen(
                             uiState = uiState,
                             viewModel = viewModel,
                             context = context,
-                            onNavigateToModelCreator = onNavigateToModelCreator
+                            onNavigateToModelCreator = onNavigateToModelCreator,
+                            onNavigateToAgentMode = onNavigateToAgentMode
                         )
                     }
 
@@ -1177,7 +1180,8 @@ fun GeneratedPromptCard(
     uiState: PromptUiState,
     viewModel: PromptFlowViewModel,
     context: Context,
-    onNavigateToModelCreator: () -> Unit = {}
+    onNavigateToModelCreator: () -> Unit = {},
+    onNavigateToAgentMode: () -> Unit = {}
 ) {
     var isCopiedAnimation by remember { mutableStateOf(false) }
 
@@ -1360,6 +1364,22 @@ fun GeneratedPromptCard(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(if (isCopiedAnimation) "কপিকৃত! ✓" else "কপি করুন")
+                    }
+
+                    // Refine in Agent Mode
+                    Button(
+                        onClick = {
+                            viewModel.loadPromptIntoAgent(prompt, "ভিডিও মাস্টার প্রম্পট")
+                            Toast.makeText(context, "প্রম্পটটি এজেন্ট মোডে নেওয়া হয়েছে!", Toast.LENGTH_SHORT).show()
+                            onNavigateToAgentMode()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                        modifier = Modifier.testTag("refine_in_agent_mode_button")
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("🤖 এজেন্ট মোডে ঠিক করুন", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
 
                     // Regenerate

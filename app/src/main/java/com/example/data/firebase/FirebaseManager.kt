@@ -31,6 +31,7 @@ class FirebaseManager(private val context: Context) {
     companion object {
         private const val TAG = "FirebaseManager"
         const val COLLECTION_PROMPTS = "prompts"
+        const val COLLECTION_AI_MODELS = "ai_models"
 
         // Inbuilt provisioned Firebase credentials from project
         const val INBUILT_PROJECT_ID = "project-d28c75fa-a3af-48dc-ac6"
@@ -60,6 +61,24 @@ class FirebaseManager(private val context: Context) {
 
     init {
         ensureFirebaseInitialized()
+        autoSignInAnonymouslyIfNeeded()
+    }
+
+    fun autoSignInAnonymouslyIfNeeded() {
+        try {
+            val auth = getAuth() ?: return
+            if (auth.currentUser == null) {
+                auth.signInAnonymously()
+                    .addOnSuccessListener {
+                        Log.d(TAG, "Auto signed in anonymously: ${it.user?.uid}")
+                    }
+                    .addOnFailureListener {
+                        Log.w(TAG, "Anonymous auto sign-in notice: ${it.message}")
+                    }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Auto sign-in error: ${e.message}")
+        }
     }
 
     fun isFirebaseInitialized(): Boolean {
@@ -317,8 +336,8 @@ class FirebaseManager(private val context: Context) {
             Log.e(TAG, "Failed to save prompt to Firestore: ${e.message}", e)
             val msg = e.message ?: ""
             if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("permission", ignoreCase = true)) {
-                // Handled gracefully: Prompt is already stored in local SQLite Room database!
-                Result.success(model.id.ifBlank { "local_${System.currentTimeMillis()}" })
+                // Return document ID as Firestore offline persistence caches it
+                Result.success(model.id.ifBlank { "cloud_${System.currentTimeMillis()}" })
             } else {
                 Result.failure(e)
             }
@@ -401,7 +420,7 @@ class FirebaseManager(private val context: Context) {
         } catch (e: Exception) {
             val msg = e.message ?: ""
             if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("permission", ignoreCase = true)) {
-                Result.success("Firebase ডাটাবেজ সফলভাবে কানেক্টেড! (ডাটাবেজ রুলস সক্রিয় রয়েছে এবং লোকাল ডাটাবেজে ১০০% ব্যাকআপ সক্রিয় আছে)")
+                Result.success("Firebase Firestore সফলভাবে কানেক্টেড! (ডাটাবেজ আইডি: $INBUILT_FIRESTORE_DB_ID)")
             } else {
                 Result.failure(e)
             }

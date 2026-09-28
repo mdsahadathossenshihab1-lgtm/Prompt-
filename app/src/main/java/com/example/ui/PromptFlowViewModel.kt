@@ -5,18 +5,20 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.firebase.EmailNotVerifiedException
 import com.example.data.firebase.FirebaseManager
+import com.example.data.firebase.FirestoreAiModel
 import com.example.data.firebase.FirestorePromptModel
-import com.example.data.local.AiModelEntity
-import com.example.data.local.AppDatabase
-import com.example.data.local.PromptHistoryEntity
 import com.example.data.preferences.UserPreferencesManager
+import com.example.data.remote.AgentRefinerService
 import com.example.data.remote.AiModelGeneratorService
 import com.example.data.remote.GeneratedModelResult
 import com.example.data.remote.PromptGeneratorService
-import com.example.data.repository.AiModelRepository
+import com.example.data.repository.FirestoreAiModelRepository
+import com.example.data.repository.FirestoreAiModelRepositoryImpl
 import com.example.data.repository.FirestorePromptRepository
 import com.example.data.repository.FirestorePromptRepositoryImpl
-import com.example.data.repository.PromptHistoryRepository
+import com.example.model.AgentChatMessage
+import com.example.model.AgentModeUiState
+import com.example.model.AgentSender
 import com.example.model.AiModelConfig
 import com.example.model.ModelPreset
 import com.example.model.PromptConfig
@@ -69,13 +71,12 @@ data class AiModelUiState(
 class PromptFlowViewModel(application: Application) : AndroidViewModel(application) {
 
     val preferencesManager = UserPreferencesManager(application)
-    private val database = AppDatabase.getDatabase(application)
-    private val historyRepository = PromptHistoryRepository(database.promptHistoryDao())
-    val aiModelRepository = AiModelRepository(database.aiModelDao())
-    private val promptService = PromptGeneratorService()
-    val aiModelGeneratorService = AiModelGeneratorService(application)
     val firebaseManager = FirebaseManager(application)
     val firestoreRepository: FirestorePromptRepository = FirestorePromptRepositoryImpl(firebaseManager)
+    val firestoreAiModelRepository: FirestoreAiModelRepository = FirestoreAiModelRepositoryImpl(firebaseManager)
+    private val promptService = PromptGeneratorService()
+    val aiModelGeneratorService = AiModelGeneratorService(application)
+    val agentRefinerService = AgentRefinerService()
 
     private val _config = MutableStateFlow(
         PromptConfig(
@@ -88,6 +89,10 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _uiState = MutableStateFlow(PromptUiState())
     val uiState: StateFlow<PromptUiState> = _uiState.asStateFlow()
+
+    // Agent Mode State (Interactive Prompt Refinement & Error Fixing)
+    private val _agentUiState = MutableStateFlow(AgentModeUiState())
+    val agentUiState: StateFlow<AgentModeUiState> = _agentUiState.asStateFlow()
 
     // AI Model Creator State
     private val _modelConfig = MutableStateFlow(AiModelConfig())
@@ -110,21 +115,21 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    val savedModels: StateFlow<List<AiModelEntity>> = aiModelRepository.allModels
+    val savedModels: StateFlow<List<FirestoreAiModel>> = firestoreAiModelRepository.getModelsFlow()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
-    val favoriteModels: StateFlow<List<AiModelEntity>> = aiModelRepository.favoriteModels
+    val favoriteModels: StateFlow<List<FirestoreAiModel>> = firestoreAiModelRepository.getFavoriteModelsFlow()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
-    val historyList: StateFlow<List<PromptHistoryEntity>> = historyRepository.allHistory
+    val historyList: StateFlow<List<FirestorePromptModel>> = firestoreRepository.getPromptsFlow()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -987,5 +992,159 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
             errorMessage = null,
             successMessage = null
         )
+    }
+
+    // ==========================================
+    // MODULE 3: AGENT MODE (INTERACTIVE PROMPT REFINEMENT)
+    // ==========================================
+
+    fun loadPromptIntoAgent(prompt: String, origin: String = "Master Prompt") {
+        if (prompt.isBlank()) return
+        val current = _agentUiState.value
+        val isFirst = current.messages.isEmpty()
+        val welcomeMsg = AgentChatMessage(
+            sender = AgentSender.AGENT,
+            messageText = "স্বাগতম এজেন্ট মোডে! 🤖 আপনার $origin সফলভাবে লোড হয়েছে।\n\nক্যামেরা অ্যাঙ্গেল, ভিজ্যুয়াল, লাইটিং, মডেল বা ব্যাকগ্রাউন্ডে কী সমস্যা বা পরিবর্তন প্রয়োজন? নিচে চ্যাট করে বলুন অথবা নিচের কুইক বাটনগুলো ব্যবহার করুন।"
+        )
+        _agentUiState.value = current.copy(
+            currentPrompt = prompt,
+            originalPrompt = if (current.originalPrompt.isBlank()) prompt else current.originalPrompt,
+            promptHistory = if (current.promptHistory.isEmpty()) listOf(prompt) else current.promptHistory,
+            messages = if (isFirst) listOf(welcomeMsg) else current.messages + AgentChatMessage(
+                sender = AgentSender.AGENT,
+                messageText = "নতুন প্রম্পট লোড করা হয়েছে! এতে কী কী পরিবর্তন বা সংশোধন চান জানান।"
+            ),
+            errorMessage = null
+        )
+    }
+
+    fun sendAgentMessage(userText: String) {
+        val trimmed = userText.trim()
+        if (trimmed.isBlank()) return
+
+        val state = _agentUiState.value
+        val effectivePrompt = state.currentPrompt.ifBlank {
+            _uiState.value.generatedPrompt ?: _modelUiState.value.generatedResult?.detailedPrompt ?: ""
+        }
+
+        if (effectivePrompt.isBlank()) {
+            _agentUiState.value = state.copy(
+                errorMessage = "প্রথমে একটি প্রম্পট লিখুন বা ভিডিও/মডেল জেনারেটর থেকে লোড করুন।"
+            )
+            return
+        }
+
+        val userMessage = AgentChatMessage(
+            sender = AgentSender.USER,
+            messageText = trimmed
+        )
+
+        val updatedMessages = state.messages + userMessage
+        _agentUiState.value = state.copy(
+            currentPrompt = effectivePrompt,
+            messages = updatedMessages,
+            isAgentThinking = true,
+            errorMessage = null
+        )
+
+        viewModelScope.launch {
+            val apiKey = preferencesManager.getApiKey()
+            val result = agentRefinerService.refinePrompt(
+                currentPrompt = effectivePrompt,
+                chatHistory = updatedMessages,
+                userInstruction = trimmed,
+                apiKey = apiKey
+            )
+
+            result.onSuccess { response ->
+                val newPrompt = response.updatedPrompt
+                val agentMessage = AgentChatMessage(
+                    sender = AgentSender.AGENT,
+                    messageText = response.explanation,
+                    refinedPrompt = newPrompt
+                )
+                val newHistory = _agentUiState.value.promptHistory + newPrompt
+                _agentUiState.value = _agentUiState.value.copy(
+                    currentPrompt = newPrompt,
+                    promptVersion = _agentUiState.value.promptVersion + 1,
+                    promptHistory = newHistory,
+                    messages = _agentUiState.value.messages + agentMessage,
+                    isAgentThinking = false,
+                    errorMessage = null
+                )
+            }.onFailure { err ->
+                val errorMsg = err.localizedMessage ?: "এজেন্ট প্রসেসিং ব্যর্থ হয়েছে।"
+                val failAgentMessage = AgentChatMessage(
+                    sender = AgentSender.AGENT,
+                    messageText = "দুঃখিত, এআই রেসপন্স তৈরিতে সমস্যা হয়েছে: $errorMsg\nদয়া করে আবার চেষ্টা করুন।"
+                )
+                _agentUiState.value = _agentUiState.value.copy(
+                    messages = _agentUiState.value.messages + failAgentMessage,
+                    isAgentThinking = false,
+                    errorMessage = errorMsg
+                )
+            }
+        }
+    }
+
+    fun revertToPreviousPrompt() {
+        val state = _agentUiState.value
+        if (state.promptHistory.size > 1) {
+            val historyWithoutCurrent = state.promptHistory.dropLast(1)
+            val previousPrompt = historyWithoutCurrent.last()
+            val revertMsg = AgentChatMessage(
+                sender = AgentSender.AGENT,
+                messageText = "পূর্ববর্তী সংস্করণে ফিরে যাওয়া হয়েছে (সংস্করণ v${maxOf(1, state.promptVersion - 1)})।"
+            )
+            _agentUiState.value = state.copy(
+                currentPrompt = previousPrompt,
+                promptVersion = maxOf(1, state.promptVersion - 1),
+                promptHistory = historyWithoutCurrent,
+                messages = state.messages + revertMsg
+            )
+        } else if (state.originalPrompt.isNotBlank() && state.currentPrompt != state.originalPrompt) {
+            _agentUiState.value = state.copy(
+                currentPrompt = state.originalPrompt,
+                promptVersion = 1,
+                messages = state.messages + AgentChatMessage(
+                    sender = AgentSender.AGENT,
+                    messageText = "আসল মূল প্রম্পটে রিসেট করা হয়েছে।"
+                )
+            )
+        }
+    }
+
+    fun updateAgentActivePrompt(newPrompt: String) {
+        _agentUiState.value = _agentUiState.value.copy(
+            currentPrompt = newPrompt
+        )
+    }
+
+    fun togglePromptCardExpanded() {
+        _agentUiState.value = _agentUiState.value.copy(
+            isPromptCardExpanded = !_agentUiState.value.isPromptCardExpanded
+        )
+    }
+
+    fun clearAgentChat() {
+        _agentUiState.value = _agentUiState.value.copy(
+            messages = listOf(
+                AgentChatMessage(
+                    sender = AgentSender.AGENT,
+                    messageText = "নতুন সেশন শুরু হয়েছে! কী কী পরিবর্তন বা নতুন কিছু যোগ করতে চান বলুন।"
+                )
+            ),
+            errorMessage = null
+        )
+    }
+
+    fun useAgentPromptInVideoGenerator() {
+        val prompt = _agentUiState.value.currentPrompt
+        if (prompt.isNotBlank()) {
+            _uiState.value = _uiState.value.copy(
+                generatedPrompt = prompt,
+                infoMessage = "এজেন্ট মোড থেকে প্রম্পট সফলভাবে ইমপোর্ট করা হয়েছে!"
+            )
+        }
     }
 }

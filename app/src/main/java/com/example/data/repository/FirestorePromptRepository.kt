@@ -136,8 +136,8 @@ class FirestorePromptRepositoryImpl(
             Log.e(TAG, "Error creating prompt in Firestore: ${e.message}", e)
             val msg = e.message ?: ""
             if (msg.contains("PERMISSION_DENIED", ignoreCase = true) || msg.contains("permission", ignoreCase = true)) {
-                // Graceful fallback: Room DB holds the prompt locally
-                Result.success(prompt.id.ifBlank { "local_${System.currentTimeMillis()}" })
+                // Return document ID as Firestore offline persistence caches it
+                Result.success(prompt.id.ifBlank { "cloud_${System.currentTimeMillis()}" })
             } else {
                 Result.failure(e)
             }

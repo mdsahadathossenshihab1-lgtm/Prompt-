@@ -15,7 +15,8 @@ data class FirestorePromptModel(
     val camera: String = "Medium shot",
     val hasReferenceImage: Boolean = false,
     val timestamp: Long = System.currentTimeMillis(),
-    val isPublic: Boolean = false
+    val isPublic: Boolean = false,
+    val userId: String = ""
 ) {
     fun toMap(): Map<String, Any?> {
         return mapOf(
@@ -32,7 +33,8 @@ data class FirestorePromptModel(
             "camera" to camera,
             "hasReferenceImage" to hasReferenceImage,
             "timestamp" to timestamp,
-            "isPublic" to isPublic
+            "isPublic" to isPublic,
+            "userId" to userId
         )
     }
 
@@ -53,7 +55,8 @@ data class FirestorePromptModel(
                 camera = map["camera"] as? String ?: "Medium shot",
                 hasReferenceImage = map["hasReferenceImage"] as? Boolean ?: false,
                 timestamp = (map["timestamp"] as? Number)?.toLong() ?: System.currentTimeMillis(),
-                isPublic = map["isPublic"] as? Boolean ?: false
+                isPublic = map["isPublic"] as? Boolean ?: false,
+                userId = map["userId"] as? String ?: ""
             )
         }
     }

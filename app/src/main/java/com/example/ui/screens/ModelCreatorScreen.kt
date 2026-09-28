@@ -108,6 +108,7 @@ import java.io.FileOutputStream
 fun ModelCreatorScreen(
     viewModel: PromptFlowViewModel,
     onNavigateToVideoGenerator: () -> Unit,
+    onNavigateToAgentMode: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val modelConfig by viewModel.modelConfig.collectAsState()
@@ -730,6 +731,21 @@ fun ModelCreatorScreen(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(if (isCopiedAnimation) "কপিকৃত! ✓" else "কপি করুন")
+                                }
+
+                                // 🤖 Refine in Agent Mode Button
+                                Button(
+                                    onClick = {
+                                        viewModel.loadPromptIntoAgent(resultPrompt, "মডেল ক্যারেক্টার প্রম্পট")
+                                        Toast.makeText(context, "প্রম্পটটি এজেন্ট মোডে নেওয়া হয়েছে!", Toast.LENGTH_SHORT).show()
+                                        onNavigateToAgentMode()
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)
+                                ) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("🤖 এজেন্ট মোডে ঠিক করুন", color = Color.Black, fontWeight = FontWeight.Bold)
                                 }
 
                                 // Attach & Lock to Video Prompts (Module 1)

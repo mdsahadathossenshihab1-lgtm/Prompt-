@@ -66,6 +66,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.screens.AgentModeScreen
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.GeneratorScreen
 import com.example.ui.screens.HistoryScreen
@@ -80,6 +81,7 @@ import com.example.ui.theme.NeonPurple
 enum class AppTab(val title: String) {
     VIDEO_PROMPTS("Video Prompts"),
     MODEL_CREATOR("Model Creator"),
+    AGENT_MODE("Agent Mode"),
     HISTORY("History"),
     AUTH("Account"),
     SETTINGS("Settings")
@@ -304,6 +306,27 @@ fun MainAppScreen(
                         modifier = Modifier.testTag("nav_model_creator_tab")
                     )
 
+                    // Module 3: Agent Mode (NEW interactive prompt director & error fixer)
+                    NavigationBarItem(
+                        selected = selectedTab == AppTab.AGENT_MODE,
+                        onClick = { selectedTab = AppTab.AGENT_MODE },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Filled.AutoAwesome,
+                                contentDescription = "Agent Mode"
+                            )
+                        },
+                        label = { Text("এজেন্ট", fontSize = 11.sp, fontWeight = if (selectedTab == AppTab.AGENT_MODE) FontWeight.Bold else FontWeight.Normal) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = NeonCyan,
+                            selectedTextColor = NeonCyan,
+                            indicatorColor = NeonCyan.copy(alpha = 0.22f),
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        modifier = Modifier.testTag("nav_agent_mode_tab")
+                    )
+
                     // History
                     NavigationBarItem(
                         selected = selectedTab == AppTab.HISTORY,
@@ -323,27 +346,6 @@ fun MainAppScreen(
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         modifier = Modifier.testTag("nav_history_tab")
-                    )
-
-                    // Account / Auth
-                    NavigationBarItem(
-                        selected = selectedTab == AppTab.AUTH,
-                        onClick = { selectedTab = AppTab.AUTH },
-                        icon = {
-                            Icon(
-                                imageVector = if (selectedTab == AppTab.AUTH) Icons.Filled.AccountCircle else Icons.Outlined.AccountCircle,
-                                contentDescription = "Account"
-                            )
-                        },
-                        label = { Text("একাউন্ট", fontSize = 11.sp, fontWeight = if (selectedTab == AppTab.AUTH) FontWeight.Bold else FontWeight.Normal) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = EmeraldGreen,
-                            selectedTextColor = EmeraldGreen,
-                            indicatorColor = EmeraldGreen.copy(alpha = 0.18f),
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        modifier = Modifier.testTag("nav_auth_tab")
                     )
 
                     // Settings
@@ -391,9 +393,15 @@ fun MainAppScreen(
             when (tab) {
                 AppTab.VIDEO_PROMPTS -> GeneratorScreen(
                     viewModel = viewModel,
-                    onNavigateToModelCreator = { selectedTab = AppTab.MODEL_CREATOR }
+                    onNavigateToModelCreator = { selectedTab = AppTab.MODEL_CREATOR },
+                    onNavigateToAgentMode = { selectedTab = AppTab.AGENT_MODE }
                 )
                 AppTab.MODEL_CREATOR -> ModelCreatorScreen(
+                    viewModel = viewModel,
+                    onNavigateToVideoGenerator = { selectedTab = AppTab.VIDEO_PROMPTS },
+                    onNavigateToAgentMode = { selectedTab = AppTab.AGENT_MODE }
+                )
+                AppTab.AGENT_MODE -> AgentModeScreen(
                     viewModel = viewModel,
                     onNavigateToVideoGenerator = { selectedTab = AppTab.VIDEO_PROMPTS }
                 )
