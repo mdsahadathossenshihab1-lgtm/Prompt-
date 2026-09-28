@@ -267,9 +267,9 @@ Do not discuss how the prompt was created."""
         }
 
         val secondaryError = secondaryResult.exceptionOrNull()
-        Log.i(TAG, "Cloud models unavailable (${secondaryError?.message}). Activating high-fidelity local master prompt engine.")
-        val synthesized = generateHighFidelityLocalPrompt(config)
-        Result.success(synthesized)
+        val errMsg = secondaryError?.message ?: primaryError?.message ?: "AI generation failed"
+        Log.e(TAG, "Cloud AI models failed: $errMsg")
+        Result.failure(IOException("এআই প্রসেসিং ব্যর্থ হয়েছে: $errMsg। দয়া করে ইন্টারনেট ও API কি চেক করুন।"))
     }
 
     private fun invokeApi(model: String, prompt: String, apiKey: String): Result<String> {

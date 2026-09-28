@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -559,6 +560,84 @@ fun ModelCreatorScreen(
                                 )
                             }
                         }
+                    }
+                }
+
+                // Error Banner Display (Displays AI service errors clearly)
+                modelUiState.errorMessage?.let { errorMsg ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("character_prompt_error_banner"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)),
+                        border = CardDefaults.outlinedCardBorder().copy(
+                            brush = Brush.linearGradient(listOf(MaterialTheme.colorScheme.error, Color(0xFFF43F5E)))
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.Top,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Error",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "AI প্রম্পট তৈরিতে সমস্যা হয়েছে",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = errorMsg,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            viewModel.generateCharacterPromptFromScript(
+                                                voiceScript = voiceScriptInput,
+                                                gender = selectedGender
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("পুনরায় চেষ্টা করুন", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Info Banner
+                if (modelUiState.infoMessage != null && modelUiState.errorMessage == null && !modelUiState.isGenerating && modelUiState.generatedResult == null) {
+                    Surface(
+                        color = NeonCyan.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(10.dp),
+                        border = CardDefaults.outlinedCardBorder().copy(
+                            brush = Brush.linearGradient(listOf(NeonCyan.copy(alpha = 0.4f), ElectricIndigo.copy(alpha = 0.2f)))
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = modelUiState.infoMessage ?: "",
+                            color = NeonCyan,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(12.dp)
+                        )
                     }
                 }
 

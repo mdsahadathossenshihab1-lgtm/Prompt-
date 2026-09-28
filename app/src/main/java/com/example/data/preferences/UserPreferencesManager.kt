@@ -11,8 +11,8 @@ class UserPreferencesManager(context: Context) {
         context.getSharedPreferences("promptflow_prefs", Context.MODE_PRIVATE)
 
     companion object {
-        // Updated to user-requested XKIRO endpoint & credentials
-        const val DEFAULT_INBUILT_API_KEY = "sk-XgS487HaNFYaGv3hGtiQGSUBZN1M8PlQP4CWNiVQ5U5jRBiM"
+        // Active verified XKIRO API credentials provided by the user
+        const val DEFAULT_INBUILT_API_KEY = "sk-xt-0b6892647ce8d495ae8bc2d9a5e212f4f07f805eeceae961"
         const val DEFAULT_API_URL = "https://api.xkiro.com/v1/chat/completions"
         const val DEFAULT_MODELS_URL = "https://api.xkiro.com/v1/models"
         const val DEFAULT_MODEL = "qwen/qwen3.8-omni-flash:free"
@@ -36,9 +36,9 @@ class UserPreferencesManager(context: Context) {
     val themeFlow: StateFlow<String> = _themeFlow.asStateFlow()
 
     init {
-        // Clear any old obsolete keys from previous servers (e.g. FlushAPI or old XKIRO keys)
+        // Reset any outdated or invalid cached keys to ensure the verified active key is used
         val storedKey = prefs.getString(KEY_CUSTOM_API_KEY, "")?.trim() ?: ""
-        if (storedKey.contains("Flush") || storedKey.contains("F1Rka67") || storedKey.endsWith("b7b4")) {
+        if (storedKey.contains("Flush") || storedKey.contains("F1Rka67") || storedKey.startsWith("sk-XgS") || storedKey.endsWith("b7b4")) {
             prefs.edit().remove(KEY_CUSTOM_API_KEY).apply()
         }
     }
@@ -59,7 +59,7 @@ class UserPreferencesManager(context: Context) {
         val key = getApiKey()
         if (key.isEmpty()) return "Not configured"
         if (key.length <= 8) return "••••••••"
-        return "••••••••" + key.takeLast(4)
+        return "••••••••" + key.takeLast(6)
     }
 
     fun setCustomApiKey(key: String) {
