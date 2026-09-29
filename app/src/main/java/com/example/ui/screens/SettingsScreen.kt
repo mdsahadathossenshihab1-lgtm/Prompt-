@@ -284,7 +284,6 @@ fun SettingsScreen(
         // Firebase Cloud Database Card
         val historyList by viewModel.historyList.collectAsState()
         val isFirebaseReady = viewModel.isFirebaseAvailable()
-        val syncedCount = historyList.count { it.isSyncedWithCloud }
 
         Card(
             modifier = Modifier
@@ -302,7 +301,7 @@ fun SettingsScreen(
             ) {
                 SectionHeader(
                     title = "Firebase Cloud Database",
-                    subtitle = "Cloud Firestore prompt backup & real-time sync",
+                    subtitle = "Cloud Firestore direct live storage & synchronization",
                     icon = Icons.Default.Cloud
                 )
 
@@ -357,14 +356,14 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Cloud Synced Prompts",
+                        text = "Firestore Live Prompts",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     AppBadge(
-                        text = "$syncedCount / ${historyList.size} Prompts",
-                        backgroundColor = if (syncedCount > 0) EmeraldGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
-                        textColor = if (syncedCount > 0) EmeraldGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "${historyList.size} Prompts in Firebase",
+                        backgroundColor = EmeraldGreen.copy(alpha = 0.15f),
+                        textColor = EmeraldGreen
                     )
                 }
 

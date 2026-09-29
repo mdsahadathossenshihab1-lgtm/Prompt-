@@ -54,7 +54,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.data.local.PromptHistoryEntity
+import com.example.data.firebase.FirestorePromptModel
 import com.example.ui.PromptFlowViewModel
 import com.example.ui.components.AppBadge
 import com.example.ui.components.SectionHeader
@@ -86,8 +86,8 @@ fun HistoryScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             SectionHeader(
-                title = "Prompt History",
-                subtitle = "${historyList.size} master prompts saved locally",
+                title = "Firebase Prompt History",
+                subtitle = "${historyList.size} master prompts stored directly in Firebase Firestore",
                 icon = Icons.Default.History,
                 modifier = Modifier.weight(1f)
             )
@@ -104,7 +104,7 @@ fun HistoryScreen(
                         } else {
                             Icon(
                                 imageVector = Icons.Default.CloudUpload,
-                                contentDescription = "Sync All to Firebase",
+                                contentDescription = "Refresh Firebase Prompts",
                                 tint = NeonCyan
                             )
                         }
@@ -224,14 +224,14 @@ fun HistoryScreen(
     if (showClearConfirm) {
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
-            title = { Text("Clear All History?") },
-            text = { Text("This will permanently remove all saved prompts from local storage.") },
+            title = { Text("Clear All Prompts?") },
+            text = { Text("This will permanently remove all saved prompts from Firebase Cloud Database.") },
             confirmButton = {
                 TextButton(
                     onClick = {
                         viewModel.clearAllHistory()
                         showClearConfirm = false
-                        Toast.makeText(context, "All history cleared", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "All Firebase prompts cleared", Toast.LENGTH_SHORT).show()
                     }
                 ) {
                     Text("Clear All", color = MaterialTheme.colorScheme.error)
@@ -248,7 +248,7 @@ fun HistoryScreen(
 
 @Composable
 fun HistoryItemCard(
-    item: PromptHistoryEntity,
+    item: FirestorePromptModel,
     onOpen: () -> Unit,
     onCopy: () -> Unit,
     onSyncCloud: () -> Unit,
@@ -284,29 +284,27 @@ fun HistoryItemCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (item.isSyncedWithCloud) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = EmeraldGreen.copy(alpha = 0.15f)
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = EmeraldGreen.copy(alpha = 0.15f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.CloudDone,
-                                    contentDescription = null,
-                                    tint = EmeraldGreen,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "Cloud",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = EmeraldGreen,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                            Icon(
+                                Icons.Default.CloudDone,
+                                contentDescription = null,
+                                tint = EmeraldGreen,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Firebase Cloud",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = EmeraldGreen,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                     AppBadge(text = item.aspectRatio)
@@ -342,18 +340,6 @@ fun HistoryItemCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (!item.isSyncedWithCloud) {
-                    OutlinedButton(
-                        onClick = onSyncCloud,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.padding(end = 6.dp)
-                    ) {
-                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Cloud Sync", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-
                 OutlinedButton(
                     onClick = onOpen,
                     shape = RoundedCornerShape(8.dp),

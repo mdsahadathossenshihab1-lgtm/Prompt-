@@ -334,7 +334,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         val title = config.script.trim().take(40).let { if (config.script.length > 40) "$it..." else it }
         val excerpt = config.script.trim().lines().firstOrNull()?.take(60) ?: title
 
-        val entity = PromptHistoryEntity(
+        val firestoreModel = FirestorePromptModel(
             title = title,
             scriptExcerpt = excerpt,
             fullScript = config.script,
@@ -346,59 +346,20 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
             location = config.location,
             presenter = config.presenter,
             camera = config.camera,
-            hasReferenceImage = config.referenceImageUri != null
+            hasReferenceImage = config.referenceImageUri != null,
+            timestamp = System.currentTimeMillis()
         )
-        val insertedId = historyRepository.insert(entity)
-
-        // Try syncing to Firebase Firestore if initialized
-        if (firebaseManager.isFirebaseInitialized()) {
-            val firestoreModel = FirestorePromptModel(
-                title = title,
-                scriptExcerpt = excerpt,
-                fullScript = config.script,
-                generatedPrompt = prompt,
-                aspectRatio = config.aspectRatio,
-                resolution = config.resolution,
-                duration = config.duration,
-                videoStyle = config.videoStyle,
-                location = config.location,
-                presenter = config.presenter,
-                camera = config.camera,
-                hasReferenceImage = config.referenceImageUri != null
-            )
-            val syncResult = firestoreRepository.createPrompt(firestoreModel)
-            syncResult.onSuccess { docId ->
-                historyRepository.updateCloudSyncStatus(insertedId, true, docId)
-            }
-        }
+        firestoreRepository.createPrompt(firestoreModel)
     }
 
-    fun syncPromptToCloud(item: PromptHistoryEntity) {
+    fun syncPromptToCloud(item: FirestorePromptModel) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSyncingCloud = true, cloudMessage = null)
-            val model = FirestorePromptModel(
-                id = item.cloudDocumentId ?: "",
-                title = item.title,
-                scriptExcerpt = item.scriptExcerpt,
-                fullScript = item.fullScript,
-                generatedPrompt = item.generatedPrompt,
-                aspectRatio = item.aspectRatio,
-                resolution = item.resolution,
-                duration = item.duration,
-                videoStyle = item.videoStyle,
-                location = item.location,
-                presenter = item.presenter,
-                camera = item.camera,
-                hasReferenceImage = item.hasReferenceImage,
-                timestamp = item.timestamp
-            )
-
-            val result = firestoreRepository.createPrompt(model)
+            val result = firestoreRepository.createPrompt(item)
             result.onSuccess { docId ->
-                historyRepository.updateCloudSyncStatus(item.id, true, docId)
                 _uiState.value = _uiState.value.copy(
                     isSyncingCloud = false,
-                    cloudMessage = "Prompt synced to Firebase Cloud!"
+                    cloudMessage = "Prompt directly saved and synchronized to Firebase Cloud!"
                 )
             }.onFailure { error ->
                 _uiState.value = _uiState.value.copy(
@@ -412,45 +373,18 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
     fun syncAllHistoryToCloud() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSyncingCloud = true, cloudMessage = null)
-            val items = historyList.value
-            if (items.isEmpty()) {
+            val result = firestoreRepository.getAllPrompts()
+            result.onSuccess { list ->
                 _uiState.value = _uiState.value.copy(
                     isSyncingCloud = false,
-                    cloudMessage = "No prompts to sync."
+                    cloudMessage = "Firebase Cloud Database: ${list.size} টি প্রম্পট সরাসরি ক্লাউডে সংরক্ষিত ও লাইভ রয়েছে।"
                 )
-                return@launch
-            }
-
-            var successCount = 0
-            for (item in items) {
-                val model = FirestorePromptModel(
-                    id = item.cloudDocumentId ?: "",
-                    title = item.title,
-                    scriptExcerpt = item.scriptExcerpt,
-                    fullScript = item.fullScript,
-                    generatedPrompt = item.generatedPrompt,
-                    aspectRatio = item.aspectRatio,
-                    resolution = item.resolution,
-                    duration = item.duration,
-                    videoStyle = item.videoStyle,
-                    location = item.location,
-                    presenter = item.presenter,
-                    camera = item.camera,
-                    hasReferenceImage = item.hasReferenceImage,
-                    timestamp = item.timestamp
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    isSyncingCloud = false,
+                    cloudMessage = "Firebase status: ${error.localizedMessage}"
                 )
-                val result = firestoreRepository.createPrompt(model)
-                if (result.isSuccess) {
-                    val docId = result.getOrNull()
-                    historyRepository.updateCloudSyncStatus(item.id, true, docId)
-                    successCount++
-                }
             }
-
-            _uiState.value = _uiState.value.copy(
-                isSyncingCloud = false,
-                cloudMessage = if (successCount > 0) "Synced $successCount prompts to Firebase Database!" else "আপনার সকল প্রম্পট লোকাল স্টোরেজে ১০০% সংরক্ষিত রয়েছে।"
-            )
         }
     }
 
@@ -482,7 +416,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         testFirebaseDatabase()
     }
 
-    fun loadFromHistory(history: PromptHistoryEntity) {
+    fun loadFromHistory(history: FirestorePromptModel) {
         _config.value = _config.value.copy(
             script = history.fullScript,
             aspectRatio = history.aspectRatio,
@@ -501,19 +435,15 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         )
     }
 
-    fun deleteHistoryItem(id: Long) {
+    fun deleteHistoryItem(id: String) {
         viewModelScope.launch {
-            val item = historyRepository.getById(id)
-            if (item?.cloudDocumentId != null) {
-                firestoreRepository.deletePrompt(item.cloudDocumentId)
-            }
-            historyRepository.deleteById(id)
+            firestoreRepository.deletePrompt(id)
         }
     }
 
     fun clearAllHistory() {
         viewModelScope.launch {
-            historyRepository.clearAll()
+            firestoreRepository.deleteAllPrompts()
         }
     }
 
@@ -643,7 +573,7 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         val modelName = customName?.takeIf { it.isNotBlank() } ?: result.suggestedName
 
         viewModelScope.launch {
-            val entity = AiModelEntity(
+            val model = FirestoreAiModel(
                 name = modelName,
                 imageUrl = result.imageUrl,
                 localFilePath = result.localFilePath,
@@ -658,10 +588,10 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
                 isFavorite = false,
                 isLocked = _modelUiState.value.isModelLocked
             )
-            aiModelRepository.insertModel(entity)
+            firestoreAiModelRepository.saveModel(model)
             _modelUiState.value = _modelUiState.value.copy(
                 isSavedToLibrary = true,
-                infoMessage = "Model saved to library as '$modelName'!"
+                infoMessage = "Model saved directly to Firebase Cloud Library as '$modelName'!"
             )
         }
     }
@@ -703,18 +633,18 @@ class PromptFlowViewModel(application: Application) : AndroidViewModel(applicati
         )
     }
 
-    fun deleteSavedModel(model: AiModelEntity) {
+    fun deleteSavedModel(model: FirestoreAiModel) {
         viewModelScope.launch {
-            aiModelRepository.deleteModel(model)
+            firestoreAiModelRepository.deleteModel(model.id)
             _modelUiState.value = _modelUiState.value.copy(
-                infoMessage = "Removed '${model.name}' from library."
+                infoMessage = "Removed '${model.name}' from Firebase Cloud."
             )
         }
     }
 
-    fun toggleFavoriteModel(id: Long, isFav: Boolean) {
+    fun toggleFavoriteModel(id: String, isFav: Boolean) {
         viewModelScope.launch {
-            aiModelRepository.toggleFavorite(id, isFav)
+            firestoreAiModelRepository.toggleFavorite(id, isFav)
         }
     }
 

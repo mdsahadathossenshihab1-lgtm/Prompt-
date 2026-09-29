@@ -88,7 +88,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.local.AiModelEntity
+import com.example.data.firebase.FirestoreAiModel
 import com.example.ui.PromptFlowViewModel
 import com.example.ui.components.AiPulseLoader
 import com.example.ui.components.AppBadge
